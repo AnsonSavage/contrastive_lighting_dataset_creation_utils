@@ -180,4 +180,4 @@ camera_spawner = CameraSpawner(
     camera_name='procedural_camera'
 )
 
-camera_spawner.update(update_seed=random.getrandbits(64))
+camera_spawner.update(update_seed=random.getrandbits(64), pass_criteria)
