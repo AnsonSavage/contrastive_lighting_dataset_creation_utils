@@ -171,6 +171,9 @@ class CameraSpawner:
         look_at_transform = translation_transform @ rotation_transform
         return look_at_transform
 
+def pass_criteria(look_from, look_at):
+    return look_at.z < look_from.z
+
 camera_spawner = CameraSpawner(
     look_from_volume_name='look_from_volume',
     look_at_volume_name='look_at_volume',
