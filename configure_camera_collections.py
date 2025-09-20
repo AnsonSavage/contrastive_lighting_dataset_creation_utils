@@ -120,6 +120,11 @@ def setup_camera_collections():
         mesh_from_data = bpy.data.meshes.new(LOOK_FROM_VOLUME_MESH)
         obj_from = bpy.data.objects.new(LOOK_FROM_VOLUME_OBJ, mesh_from_data)
         aux_coll.objects.link(obj_from)
+        
+        # Set viewport display to wireframe and disable render visibility
+        obj_from.display_type = 'WIRE'
+        obj_from.hide_render = True
+        
         print(f"Added '{LOOK_FROM_VOLUME_OBJ}' to the '{aux_coll.name}' collection.")
 
     # Add 'look_at_volume' empty mesh if it doesn't exist
@@ -127,6 +132,11 @@ def setup_camera_collections():
         mesh_at_data = bpy.data.meshes.new(LOOK_AT_VOLUME_MESH)
         obj_at = bpy.data.objects.new(LOOK_AT_VOLUME_OBJ, mesh_at_data)
         aux_coll.objects.link(obj_at)
+
+        # Set viewport display to wireframe and disable render visibility
+        obj_at.display_type = 'WIRE'
+        obj_at.hide_render = True
+        
         print(f"Added '{LOOK_AT_VOLUME_OBJ}' to the '{aux_coll.name}' collection.")
         
     print("\nScript finished successfully.")
@@ -135,4 +145,3 @@ def setup_camera_collections():
 # --- This allows the script to be run from the Blender text editor ---
 if __name__ == "__main__":
     setup_camera_collections()
-
