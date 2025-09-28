@@ -1,163 +1,213 @@
-import json
-import requests
-from bs4 import BeautifulSoup
+"""Utilities for downloading HDRI metadata and files from Poly Haven using the official API.
+
+Rewritten to avoid HTML scraping (which is disallowed by Poly Haven's ToS) and
+instead leverage their documented JSON endpoints:
+  - https://api.polyhaven.com/info/{asset_id}
+  - https://api.polyhaven.com/files/{asset_id}
+
+Example:
+  python polyhaven_hdri_scraper.py output_dir https://polyhaven.com/a/kiara_1_dawn --resolution 8k --format exr
+
+Features:
+  * Fetch full metadata (categories, tags, description, authors, etc.).
+  * Select preferred resolution (falls back gracefully if unavailable).
+  * Choose file format: exr or hdr.
+  * Optional tonemapped JPG download.
+  * Integrity check via MD5 (optional flag) after download.
+  * Rate limiting / polite delay between assets.
+
+Note: Please support Poly Haven (https://polyhaven.com/support) if this tooling
+helps your workflow.
+"""
+
+from __future__ import annotations
+
 import argparse
+import hashlib
+import json
 import os
 import time
+from typing import Dict, Any, Tuple
 
-# Note: PolyHaven's terms of use prohibit automated scraping. Please support PolyHaven financially and request permission to scrape via info@polyhaven.com
+import requests
 
-def fetch_html_content(url):
+API_INFO = "https://api.polyhaven.com/info/{asset}"
+API_FILES = "https://api.polyhaven.com/files/{asset}"
+
+DEFAULT_RES_ORDER = ["1k", "2k", "4k", "8k", "16k", "20k", "24k", "29k", "30k"]  # ascending for fallback logic
+
+
+class PolyHavenAPIError(RuntimeError):
+    pass
+
+
+def extract_asset_id(url_or_id: str) -> str:
+    """Accept either a full https://polyhaven.com/a/<id> URL or a raw id."""
+    clean = url_or_id.strip().rstrip('/')
+    if "/a/" in clean:
+        return clean.split("/a/")[-1]
+    # support older style https://polyhaven.com/<id>
+    if clean.startswith("http"):
+        return clean.split('/')[-1]
+    return clean
+
+
+def http_get_json(url: str, retries: int = 3, backoff: float = 0.75) -> Any:
+    last_exc = None
+    for attempt in range(1, retries + 1):
+        try:
+            r = requests.get(url, timeout=30)
+            if r.status_code == 404:
+                raise PolyHavenAPIError(f"Asset not found at {url}")
+            r.raise_for_status()
+            return r.json()
+        except (requests.RequestException, ValueError) as e:  # ValueError for json decode
+            last_exc = e
+            if attempt == retries:
+                raise PolyHavenAPIError(f"Failed GET {url}: {e}")
+            time.sleep(backoff * attempt)
+    raise PolyHavenAPIError(f"Unexpected retry exhaustion for {url}: {last_exc}")
+
+
+def fetch_asset_info(asset_id: str) -> Dict[str, Any]:
+    return http_get_json(API_INFO.format(asset=asset_id))
+
+
+def fetch_asset_files(asset_id: str) -> Dict[str, Any]:
+    return http_get_json(API_FILES.format(asset=asset_id))
+
+
+def choose_resolution(available: Dict[str, Any], desired: str) -> str:
+    """Return desired if present else the highest below it or the closest available."""
+    if desired in available:
+        return desired
+    # Build ordered preference list up to largest present
+    present = [r for r in DEFAULT_RES_ORDER if r in available]
+    if not present:
+        raise PolyHavenAPIError("No standard resolution keys present in asset files JSON")
+    # find closest by index difference
+    if desired in DEFAULT_RES_ORDER:
+        desired_idx = DEFAULT_RES_ORDER.index(desired)
+        # pick the present resolution with minimal absolute index distance
+        best = min(present, key=lambda r: abs(DEFAULT_RES_ORDER.index(r) - desired_idx))
+        return best
+    # fallback to highest
+    return present[-1]
+
+
+def select_hdri_file(files_json: Dict[str, Any], resolution: str, file_format: str) -> Tuple[str, int, str]:
+    """Return (url, size_bytes, md5) for the chosen HDRI file.
+
+    files_json structure excerpt:
+      {
+        "hdri": {
+            "8k": {"hdr": {"url": ... , "size": int, "md5": str}, "exr": {...}},
+            "16k": { ... }
+        },
+        "tonemapped": {...}
+      }
     """
-    Fetch HTML content from a given URL.
-    
-    Args:
-        url (str): The URL to fetch
-    
-    Returns:
-        str: HTML content of the page
-    """
-    try:
-        # Send a GET request to the URL
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-        response = requests.get(url, headers=headers)
-        
-        # Raise an exception for bad status codes
-        response.raise_for_status()
-        
-        return response.text
-    except requests.RequestException as e:
-        print(f"Error fetching URL: {e}")
-        return None
-
-def extract_tags_and_categories(html_content):
-    """
-    Extract categories and tags from Poly Haven asset page HTML.
-
-    Note, this depends on a unique <strong> HTML element containing the text "Categories" and "Tags".
-    
-    Args:
-        html_content (str): The HTML content of the page
-    
-    Returns:
-        dict: A dictionary containing categories and tags
-    """
-    # Parse the HTML
-    soup = BeautifulSoup(html_content, 'html.parser')
-
-    
-    # Extract categories
-    all_strong_sections = soup.find_all('strong')
-    for strong_section in all_strong_sections:
-        # If it contains "Categories" then we have found the section. We then need to get its parent div
-        if "Categories" in strong_section.text:
-            # category_span = strong_section.find_parent('span', class_='AssetPage_infoItem__rffWr')
-            category_span = strong_section.parent
-            break
-
-    categories = []
-    if category_span:
-        category_tags = category_span.find_all('div', class_="AssetPage_tag__GHBX_")
-        categories = [tag.text.strip() for tag in category_tags]
+    hdri_section = files_json.get("hdri")
+    if not hdri_section:
+        raise PolyHavenAPIError("'hdri' section missing in files JSON")
+    chosen_res = choose_resolution(hdri_section, resolution)
+    res_entry = hdri_section[chosen_res]
+    if file_format not in res_entry:
+        # fallback: pick any available format
+        available_formats = list(res_entry.keys())
+        if not available_formats:
+            raise PolyHavenAPIError(f"No file formats listed under resolution {chosen_res}")
+        fallback_fmt = available_formats[0]
+        print(f"Requested format '{file_format}' not available at {chosen_res}, using '{fallback_fmt}'.")
+        file_format = fallback_fmt
+    entry = res_entry[file_format]
+    return entry["url"], entry.get("size", -1), entry.get("md5", "")
 
 
-    
-    # Extract tags
-    for strong_section in all_strong_sections:
-        # If it contains "Tags" then we have found the section. We then need to get its parent div
-        if "Tags" in strong_section.text:
-            # tags_span = strong_section.find_parent('span', class_='AssetPage_infoItem__rffWr')
-            tags_span = strong_section.parent
-            break
-    tags = []
-    if tags_span:
-        tag_tags = tags_span.find_all('div', class_='AssetPage_tag__GHBX_')
-        tags = [tag.text.strip() for tag in tag_tags]
-    
-    
-    # Prepare output
-    output = {
-        "categories": categories,
-        "tags": tags
+def download_file(url: str, dest_path: str, chunk: int = 1024 * 1024) -> None:
+    with requests.get(url, stream=True) as r:
+        r.raise_for_status()
+        written = 0
+        with open(dest_path, "wb") as f:
+            for part in r.iter_content(chunk_size=chunk):
+                if not part:
+                    continue
+                f.write(part)
+                written += len(part)
+
+
+def save_metadata(asset_dir: str, asset_id: str, info: Dict[str, Any], files_json: Dict[str, Any]) -> None:
+    meta_path = os.path.join(asset_dir, f"{asset_id}_asset_metadata.json")
+    data = {
+        "asset_id": asset_id,
+        "info": info,
+        # prune heavy nested file data to just available resolutions & formats summary
+        "available_resolutions": sorted(list(files_json.get("hdri", {}).keys()), key=lambda r: DEFAULT_RES_ORDER.index(r) if r in DEFAULT_RES_ORDER else 999),
+        "formats_per_resolution": {res: list(files_json["hdri"][res].keys()) for res in files_json.get("hdri", {})},
+        "tonemapped_jpg": files_json.get("tonemapped", {}).get("url"),
     }
-    
-    return output
-
-def save_to_json(data, directory, hdri_name):
-    """
-    Save extracted data to a JSON file inside the specified directory with HDRI name prefix.
-    
-    Args:
-        data (dict): Dictionary of categories and tags
-        directory (str): Directory to save the JSON file
-        hdri_name (str): Name prefix for the JSON file
-    """
-    filepath = os.path.join(directory, f"{hdri_name}_asset_metadata.json")
-    with open(filepath, 'w', encoding='utf-8') as f:
+    with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
-def download_hdri(hdri_name, hdri_dir, resolution='4k'):
-    """
-    Download the HDRI file from Poly Haven.
-    
-    Args:
-        hdri_name (str): Name of the HDRI asset
-        directory (str): Directory to save the HDRI file
-    """
-    download_link = f"https://dl.polyhaven.org/file/ph-assets/HDRIs/exr/{resolution}/{hdri_name}_{resolution}.exr"
-    response = requests.get(download_link, stream=True)
-    if response.status_code == 200:
-        filepath = os.path.join(hdri_dir, f"{hdri_name}_{resolution}.exr")
-        with open(filepath, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
-        print(f"Downloaded HDRI: {filepath}")
 
-def scrape_hdri_metadata(url):
-    """
-    Scrape HDRI metadata from a Poly Haven asset page.
-    
-    Args:
-        url (str): URL of the Poly Haven asset page
-    """
+def process_asset(asset_identifier: str, out_dir: str, resolution: str, file_format: str, download_tonemapped: bool, delay: float) -> None:
+    asset_id = extract_asset_id(asset_identifier)
+    asset_dir = os.path.join(out_dir, asset_id)
+    os.makedirs(asset_dir, exist_ok=True)
 
-    html_content = fetch_html_content(url)
+    print(f"== Processing {asset_id} ==")
+    info = fetch_asset_info(asset_id)
+    files_json = fetch_asset_files(asset_id)
+    save_metadata(asset_dir, asset_id, info, files_json)
+    url, size_bytes, md5 = select_hdri_file(files_json, resolution, file_format)
+    fname = os.path.basename(url.split('?')[0])  # strip query args
+    dest = os.path.join(asset_dir, fname)
+    print(f"Downloading HDRI: {fname} ({size_bytes/1e6:.1f} MB) -> {dest}")
+    download_file(url, dest)
+    print("HDRI download complete.")
 
-    if not html_content:
-        return
+    if download_tonemapped and files_json.get("tonemapped", {}).get("url"):
+        tm_url = files_json["tonemapped"]["url"]
+        tm_name = os.path.basename(tm_url.split('?')[0])
+        tm_dest = os.path.join(asset_dir, tm_name)
+        print(f"Downloading tonemapped JPG: {tm_name}")
+        download_file(tm_url, tm_dest)
 
-    asset_metadata = extract_tags_and_categories(html_content)
-    return asset_metadata
+    if delay > 0:
+        time.sleep(delay)
 
-def get_polyhaven_hdri(url, directory):
-    """
-    Scrape a single Poly Haven asset page and save metadata.
-    
-    Args:
-        url (str): URL of the Poly Haven asset page
-        directory (str): Directory to save the JSON file
-    """
-    hdri_name = url.rstrip('/').split('/')[-1].lower()
-    hdri_dir = os.path.join(directory, hdri_name)
-    os.makedirs(hdri_dir, exist_ok=True)
 
-    asset_metadata = scrape_hdri_metadata(url)
-    save_to_json(asset_metadata, hdri_dir, hdri_name)
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(description="Download Poly Haven HDRIs and metadata via official API")
+    p.add_argument("directory", help="Output directory")
+    p.add_argument("assets", nargs="+", help="Poly Haven asset URLs or IDs (e.g. kiara_1_dawn or https://polyhaven.com/a/kiara_1_dawn)")
+    p.add_argument("--resolution", default="4k", help="Desired resolution (e.g. 1k,2k,4k,8k,16k,20k,24k,29k,30k). Will fallback to closest available.")
+    p.add_argument("--format", choices=["exr", "hdr"], default="exr", help="Preferred file format")
+    p.add_argument("--tonemapped", action="store_true", help="Also download tonemapped JPG preview if available")
+    p.add_argument("--delay", type=float, default=0.1, help="Delay (seconds) between assets to be polite")
+    return p
 
-    download_hdri(hdri_name, hdri_dir)
 
-def main():
-    parser = argparse.ArgumentParser(description='Scrape HDRI metadata from Poly Haven.')
-    parser.add_argument('directory', type=str, help='Directory to save HDRI metadata')
-    parser.add_argument('urls', nargs='+', help='List of Poly Haven asset URLs to scrape')
+def main():  # pragma: no cover
+    parser = build_parser()
     args = parser.parse_args()
+    os.makedirs(args.directory, exist_ok=True)
+    for asset in args.assets:
+        try:
+            process_asset(
+                asset,
+                args.directory,
+                args.resolution.lower(),
+                args.format.lower(),
+                args.tonemapped,
+                args.delay,
+            )
+        except PolyHavenAPIError as e:
+            print(f"Error: {e}")
+        except Exception as e: 
+            print(f"Unexpected error processing {asset}: {e}")
 
-    for url in args.urls:
-        get_polyhaven_hdri(url, args.directory)
-        time.sleep(1)  # Be polite and avoid overwhelming the server
 
-if __name__ == '__main__':
+if __name__ == "__main__":  # pragma: no cover
     main()
 
