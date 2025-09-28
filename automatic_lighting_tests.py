@@ -34,6 +34,7 @@ def set_camera_focus_object(cam: bpy.types.Object, obj: bpy.types.Object) -> Non
     cam.data.dof.aperture_fstop = 0.5
 
 def add_reverse_key_light(cam: bpy.types.Object, obj: bpy.types.Object, light_size:float = 1.5, remove_existing: bool = True) -> None:
+    # TODO: You need to be able to randomly sample distances, sizes, strengths, colors, etc.
     if remove_existing:
         for light in [o for o in bpy.context.scene.objects if o.type == 'LIGHT' and 'Reverse_Key_Light' in o.name]:
             bpy.data.objects.remove(light, do_unlink=True)
@@ -82,6 +83,17 @@ def add_reverse_key_light(cam: bpy.types.Object, obj: bpy.types.Object, light_si
     # Point the light at the object using a track to constraint
     constraint = light_object.constraints.new(type='TRACK_TO')
     constraint.target = obj
+
+    # Add a plane as a bounce light reflector
+    plane_size = light_size * 2
+    plane_location = obj.location - object_to_light * camera_to_object_length + z_axis * 0.5
+    bpy.ops.mesh.primitive_plane_add(size=plane_size, location=plane_location)
+    # add track to constraint to the plane to face the object
+    plane_object = bpy.context.active_object
+    constraint = plane_object.constraints.new(type='TRACK_TO')
+    constraint.target = obj
+
+
 
 
 
