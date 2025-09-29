@@ -180,11 +180,11 @@ def process_asset(asset_identifier: str, out_dir: str, resolution: str, file_for
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Download Poly Haven HDRIs and metadata via official API")
     p.add_argument("directory", help="Output directory")
-    p.add_argument("assets", nargs="+", help="Poly Haven asset URLs or IDs (e.g. kiara_1_dawn or https://polyhaven.com/a/kiara_1_dawn)")
+    p.add_argument("assets", nargs="+", help="Poly Haven asset URLs or IDs, or list to text file containing these assets separated by new lines (e.g. kiara_1_dawn or https://polyhaven.com/a/kiara_1_dawn)")
     p.add_argument("--resolution", default="4k", help="Desired resolution (e.g. 1k,2k,4k,8k,16k,20k,24k,29k,30k). Will fallback to closest available.")
     p.add_argument("--format", choices=["exr", "hdr"], default="exr", help="Preferred file format")
     p.add_argument("--tonemapped", action="store_true", help="Also download tonemapped JPG preview if available")
-    p.add_argument("--delay", type=float, default=0.1, help="Delay (seconds) between assets to be polite")
+    p.add_argument("--delay", type=float, default=0.0, help="Delay (seconds) between assets to be polite")
     return p
 
 
@@ -192,7 +192,23 @@ def main():  # pragma: no cover
     parser = build_parser()
     args = parser.parse_args()
     os.makedirs(args.directory, exist_ok=True)
-    for asset in args.assets:
+    assets_to_request = args.assets
+    if len(assets_to_request) == 0:
+        print("No assets specified, exiting.")
+        return
+    elif len(assets_to_request) == 1:
+        # Check if it's a text file with multiple asset IDs/URLs on each line
+        potential_file = assets_to_request[0]
+        if os.path.isfile(potential_file):
+            with open(potential_file, "r", encoding="utf-8") as f:
+                lines = [line.strip() for line in f if line.strip()]
+                if lines:
+                    assets_to_request = lines
+                    print(f"Loaded {len(lines)} assets from {potential_file}")
+                else:
+                    print(f"No valid asset lines found in {potential_file}, exiting.")
+                    return
+    for asset in assets_to_request:
         try:
             process_asset(
                 asset,
