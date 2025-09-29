@@ -38,6 +38,8 @@ def add_reverse_key_light(cam: bpy.types.Object, obj: bpy.types.Object, light_si
     if remove_existing:
         for light in [o for o in bpy.context.scene.objects if o.type == 'LIGHT' and 'Reverse_Key_Light' in o.name]:
             bpy.data.objects.remove(light, do_unlink=True)
+        for plane in [o for o in bpy.context.scene.objects if o.type == 'MESH' and 'Bounce_Plane' in o.name]:
+            bpy.data.objects.remove(plane, do_unlink=True)
     assert cam.type == 'CAMERA'
     
     camera_to_object = obj.location - cam.location
@@ -90,6 +92,7 @@ def add_reverse_key_light(cam: bpy.types.Object, obj: bpy.types.Object, light_si
     bpy.ops.mesh.primitive_plane_add(size=plane_size, location=plane_location)
     # add track to constraint to the plane to face the object
     plane_object = bpy.context.active_object
+    plane_object.name = "Bounce_Plane"
     constraint = plane_object.constraints.new(type='TRACK_TO')
     constraint.target = obj
 
