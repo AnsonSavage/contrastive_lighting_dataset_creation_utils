@@ -1,4 +1,4 @@
-from data.signature_vector.attribute import VariantAttribute, InvariantAttribute
+from .attribute import VariantAttribute, InvariantAttribute
 
 class SignatureVector:
     """ A class composed of variant and invariant attributes that uniquely defines an image in the contrastive lighting dataset."""

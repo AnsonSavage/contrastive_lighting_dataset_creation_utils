@@ -1,6 +1,6 @@
 from enum import Enum, auto
 from dataclasses import dataclass
-from data.signature_vector.attribute import VariantAttribute
+from .attribute import VariantAttribute
 
 class LightSize(Enum):
     SMALL = auto()
@@ -50,6 +50,7 @@ class TimeOfDay(Enum):
     SUNRISE_SUNSET = auto()
     MORNING_AFTERNOON = auto()
     MIDDAY = auto()
+    NIGHT = auto()
 class IndoorOutdoor(Enum):
     INDOOR = auto()
     OUTDOOR = auto()
@@ -71,6 +72,8 @@ category_to_enum_maper = {
     'morning-afternoon': TimeOfDay.MORNING_AFTERNOON,
     'high contrast': ContrastLevel.HIGH,
     'midday': TimeOfDay.MIDDAY,
+    'medium contrast': ContrastLevel.MEDIUM,
+    'night': TimeOfDay.NIGHT
 }
 
 class HDRI(LightSourceAttribute):
@@ -86,6 +89,14 @@ class RimLight(VirtualLight):
     pass
 
 import os
+import json
 if __name__ == "__main__":
-    for folder in os.listdir(r'C:\Users\yaboy\OneDrive\Documents\BYU\Masters_Thesis\contrastive_lighting_dataset_creation_utils\dummy_data\hdri'):
+    hdri_directory = r'C:\Users\yaboy\OneDrive\Documents\BYU\Masters_Thesis\contrastive_lighting_dataset_creation_utils\dummy_data\hdri'
+    for folder in os.listdir(hdri_directory):
+        if not os.path.isdir(os.path.join(hdri_directory, folder)):
+            continue
         print(folder)
+        json_path = os.path.join(hdri_directory, folder, f"{folder}_asset_metadata.json")
+        categories = json.load(open(json_path))['info']['categories']
+        for category in categories:
+            print('\t', category_to_enum_maper.get(category.lower(), f"Unknown category: {category}"))
