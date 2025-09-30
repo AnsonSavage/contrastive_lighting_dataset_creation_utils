@@ -37,7 +37,7 @@ class ImageImageRenderManager:
 
         # Now that the camera is in place, we need to set the HDRI
         bpy.context.scene.world.node_tree.nodes['Environment Texture'].image = bpy.data.images.load(hdri_path)
-        bpy.context.scene.world.node_tree.nodes['Mapping'].inputs['Rotation'].default_value[2] = hdri_rotation
+        bpy.context.scene.world.node_tree.nodes['Mapping'].inputs['Rotation'].default_value[2] = math.radians(hdri_rotation) # TODO: check but I'm pretty sure this should be radians.
 
         # Finally, we need to set the output path and render the image
         bpy.context.scene.render.filepath = output_path
