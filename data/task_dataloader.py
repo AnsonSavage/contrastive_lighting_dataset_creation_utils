@@ -59,18 +59,26 @@ class RenderGenerator:
 
     def do_render(self, signature_vector: SignatureVector, output_path: str, headless: bool = True) -> str:
         scene_path = get_scene_path_by_id(signature_vector.invariant_attributes[0].scene_id)
-        subprocess.run([
+        result = subprocess.run([
             self.path_to_blender,
+            scene_path,
             '--background' if headless else '',
             '--python', 'render_manager.py',
             
             '--', # Begin command line args for the script
             f'--output_path={output_path}',
-            f'--scene_path={scene_path}',
+            # f'--scene_path={scene_path}',
             f'--camera_seed={signature_vector.invariant_attributes[1].seed}',
             f'--hdri_path={get_hdri_path_by_name(signature_vector.variant_attributes[0].name, resolution="2k", extension=".exr")}',
             f'--hdri_z_rotation_offset={signature_vector.variant_attributes[0].z_rotation_offset_from_camera}'
-        ])
+        ],
+                                capture_output=True)
+
+        for line in result.stdout.splitlines():
+            if '[render_manager]' in line.decode('utf-8'):
+                print(line.decode('utf-8'))
+        if result.stderr:
+            print("Blender script errors: ", result.stderr)
         return output_path
 
 class ImageImageSignatureVector(SignatureVector):
