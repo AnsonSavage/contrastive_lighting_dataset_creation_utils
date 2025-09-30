@@ -172,7 +172,9 @@ class CameraSpawner:
         return look_at_transform
 
 def pass_criteria(look_from, look_at):
-    return look_at.z < look_from.z
+    looking_down = look_at.z < look_from.z
+    looking_straight_down = down = mathutils.Vector((0, 0, -1)).dot((look_at - look_from).normalized()) > 0.9
+    return looking_down and not looking_straight_down
 
 camera_spawner = CameraSpawner(
     look_from_volume_name='look_from_volume',
