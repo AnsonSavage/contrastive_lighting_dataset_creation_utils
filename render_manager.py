@@ -4,6 +4,7 @@ import math
 import bpy
 from camera_spawner import CameraSpawner
 from configure_camera_collections import PROCEDURAL_CAMERA_OBJ, LOOK_FROM_VOLUME_OBJ, LOOK_AT_VOLUME_OBJ
+import argparse
 
 class ImageImageRenderManager:
     '''
@@ -16,7 +17,7 @@ class ImageImageRenderManager:
 
     def render(self,
                output_path: str,
-               scene_id: str, # We assume the scene is already loaded, but it might be more efficient to boot blender once and load the scene here :shrug
+               scene_path: str,
                camera_seed: int,
                hdri_path: str,
                hdri_z_rotation_offset: float,
@@ -26,6 +27,7 @@ class ImageImageRenderManager:
             look_at_volume_name=LOOK_AT_VOLUME_OBJ,
             camera_name=PROCEDURAL_CAMERA_OBJ
         )
+        bpy.ops.wm.open_mainfile(filepath=scene_path)
         camera_spawner.update(update_seed=camera_seed)
 
         # Get Camera's Z rotation
@@ -44,3 +46,24 @@ class ImageImageRenderManager:
         bpy.ops.render.render(write_still=True)
 
         return output_path
+
+# Read in command line arguments including --output_path, --scene_path, --camera_seed, --hdri_path, --hdri_z_rotation_offset
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Render an image with specified parameters.")
+    parser.add_argument('--output_path', type=str, required=True, help='Path to save the rendered image.')
+    parser.add_argument('--scene_path', type=str, required=True, help='Path to the Blender scene file (.blend).')
+    parser.add_argument('--camera_seed', type=int, required=True, help='Seed for the camera randomness.')
+    parser.add_argument('--hdri_path', type=str, required=True, help='Path to the HDRI file.')
+    parser.add_argument('--hdri_z_rotation_offset', type=float, required=True, help='Z rotation offset for the HDRI in degrees.')
+
+    args = parser.parse_args()
+    
+    render_manager = ImageImageRenderManager()
+    render_manager.render(
+        output_path=args.output_path,
+        scene_path=args.scene_path,
+        camera_seed=args.camera_seed,
+        hdri_path=args.hdri_path,
+        hdri_z_rotation_offset=args.hdri_z_rotation_offset
+    )

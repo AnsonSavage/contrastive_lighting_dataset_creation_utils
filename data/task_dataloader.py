@@ -29,11 +29,11 @@ from environment import BLENDER_PATH, DATA_PATH
 import random
 import subprocess
 
-import torch
+# import torch
 from .signature_vector.signature_vector import SignatureVector
 from .signature_vector.light_attribute import HDRIName
 from .signature_vector.invariant_attributes import SceneID, CameraSeed
-from .signature_vector.data_getters import get_available_scene_ids, get_available_hdris_names, get_scene_path_by_id
+from .signature_vector.data_getters import get_available_scene_ids, get_available_hdris_names, get_scene_path_by_id, get_hdri_path_by_name
 
 # Make a separate random number generator for each task
 image_image_rng = random.Random(0)
@@ -53,17 +53,25 @@ image_image_is_free_invariant = (False, False)
 image_image_is_free_variant = (True)
 
 class RenderGenerator:
-    def __init__(self, blender_path: str | None = None):
+    def __init__(self):
         # Use provided path or fall back to env BLENDER_PATH
-        self.path_to_blender = blender_path or BLENDER_PATH
-    
+        self.path_to_blender = BLENDER_PATH
+
     def do_render(self, signature_vector: SignatureVector, output_path: str, headless: bool = True) -> str:
+        scene_path = get_scene_path_by_id(signature_vector.invariant_attributes[0].scene_id)
         subprocess.run([
             self.path_to_blender,
             '--background' if headless else '',
-            get_scene_path_by_id(signature_vector.invariant_attributes[0].scene_id), # TODO: I don't really like how we're indexing into the signature vector like this, maybe getters would be better.
-            '--python', 'render_script.py',
-            '--', f'--output_path={output_path}'] + self.signature_vector_to_args(signature_vector)) # TODO: I guess we'll need to be able to serialize the signature vectors
+            '--python', 'render_manager.py',
+            
+            '--', # Begin command line args for the script
+            f'--output_path={output_path}',
+            f'--scene_path={scene_path}',
+            f'--camera_seed={signature_vector.invariant_attributes[1].seed}',
+            f'--hdri_path={get_hdri_path_by_name(signature_vector.variant_attributes[0].name, resolution="2k", extension=".exr")}',
+            f'--hdri_z_rotation_offset={signature_vector.variant_attributes[0].z_rotation_offset_from_camera}'
+        ])
+        return output_path
 
 class ImageImageSignatureVector(SignatureVector):
     def __init__(self, variant_attributes: tuple[HDRIName], invariant_attributes: tuple[SceneID, CameraSeed]):
@@ -78,17 +86,12 @@ class ImageImageSignatureVector(SignatureVector):
             f"camera_{self.invariant_attributes[1].seed}_hdri_offset_{self.variant_attributes[0].z_rotation_offset_from_camera}.png"
         )
         if not os.path.exists(path):
-            raise ValueError(f"Path {path} does not exist") # TODO: request the render and then ensure it gets saved to that path. Eventually we'll want to do some kind of lazy thing here because we don't want to have to reaload the scene a bunch of times, but we'll get to that later.
+            RenderGenerator().do_render(self, path)
         return path
 
-def get_image_path_by_signature_vector(signature_vector: ImageImageSignatureVector) -> torch.Tensor:
-    # This function will need to look up the appropriate render based on the signature vector
-    # If it's on disk, it'll just load that, otherwise it will request a render of it
-    pass
-
 class ImageImageDataLoader:
-    def get_batch(self, invariant_free_mask, batch_size:int = None) -> ImageImageSignatureVector: # normally would also include a variant free mask, but this is true trivially in this case.
-        batch_size = 32 # If none, should it get the biggest batch size it can?
+    def get_batch_of_signature_vectors(self, invariant_free_mask, batch_size:int = None) -> list[ImageImageSignatureVector]: # normally would also include a variant free mask, but this is true trivially in this case.
+        # If batch_size is none, should it get the biggest batch size it can?
         # So, basically what we need to do now is:
         """
         - If the SceneID is not free, we need to select a single random scene
@@ -96,53 +99,71 @@ class ImageImageDataLoader:
 
         # Otherwise, we sample those with replacement
 
-
         - The HDRI name will always be free, so we can just sample that without replacement
         """
 
         # TODO: you should probably also do some digging into whether you can support multiple positive pairs in your batch.
         # For now, we're just going to have one positive pair per batch.
+        # The number of results will be 2 * batch size
 
-        selected_scene_left = None
-        selected_scene_right = None
-        for i in range(len(self.invariant_attributes)):
-            is_free = invariant_free_mask[i]
-            attribute = self.invariant_attributes[i]
-            if not is_free:
-                if isinstance(attribute, SceneID): # TODO: should this be handled via polymorphism?
-                    # Select a single random scene ID
-                    available_scenes = get_available_scene_ids()
-                    selected_scene_left = image_image_rng.choice(available_scenes)
-                    selected_scene_right = image_image_rng.choice(available_scenes)
-                elif isinstance(attribute, CameraSeed):
-                    selected_seed = image_image_rng.randint(0, 1e6)
-                    attribute.seed = selected_seed
-                else:
-                    raise ValueError(f"Unknown invariant attribute type: {type(attribute)}")
-            else:
-                raise NotImplementedError("Currently only supports non-free invariant attributes")
+        available_scenes = get_available_scene_ids()
+        available_hdris = get_available_hdris_names()
+        print("Available scenes:", available_scenes)
+        print("Available HDRIs:", available_hdris)
+        selection_of_hdris = image_image_rng.sample(available_hdris, k=batch_size)
+        rotations = [image_image_rng.randint(0, 360) for _ in range(batch_size)]
+        selected_scene_left = image_image_rng.choice(available_scenes)
+        selected_scene_right = image_image_rng.choice(available_scenes)
+        camera_seed_left = image_image_rng.randint(0, 1e6)
+        camera_seed_right = image_image_rng.randint(0, 1e6)
 
-         # Okay, left side doesn't yet know what the camera HDRI offset will be yet. The right side will be informed from the left side. 
-         # Waiiittt... I like this better: what if we randomly select the HDRI offset for both sides, have the camera seed chooose the camera rotation, and then constrain the Hdri offset to be that rotation + some random offset!
-         # Okay, I really like that and I'm so glad that this clicked, haha. So much simpler.
-         # So now the question is: do we still need to pre-generate the data using the sampling from the dataloader, or do we just systematically make a bunch of it?
-        """Let's compare and contrast the two approaches:
-        - Pre-generating the data:
-          - Pros: We only generate the data we will actually train on, according to whatever sampling strategies we come up with for the dataloaders
-            - Cons: More complex to implement, need to manage storage of pre-generated data, less flexible for changing sampling strategies
-            - Cons: It doesn't allow us to sample from existing data, so knowing the "size" of the dataset is more complex.
-        - Systematically generating the data:
-            - Pros: Simpler to implement, more flexible for changing sampling strategies, can easily sample from existing data
-            - Cons: May use a ton of storage space and render power
-            - Cons: It's not really clear, out of all the possible data we could make, what is the most helpful data?
-        """
+        batch = []
+        for i in range(batch_size): # TODO: later you can support the free mask, right now we're assuming everything is not free :)
+            selected_hdri = selection_of_hdris[i]
+            selected_rotation = rotations[i]
+            hdri_attribute = HDRIName(
+                name=selected_hdri,
+                z_rotation_offset_from_camera=selected_rotation
+            )
 
-        """ 
-        Here's what I'm thinking:
-        - if we systematically generate it, we can flag data somehow to be able to be grouped as a task, that way future runs can be more flexible and grab one task at a time. Tasks can have references to the paths of the images, that way images could be used across tasks, if necessary
-        So, we can have a 'read' mode where the number of tasks is simply fixed to the generated tasks. Could be good, I like it. The 'read' mode I think could be implemented using a dataloader
-        # So, we'll have a giant pool of rendered images, and each task could be a JSON file or otherwise that references images in that pool
-        """
+            signature_vector_left = ImageImageSignatureVector(
+                variant_attributes=(hdri_attribute,),
+                invariant_attributes=(
+                    SceneID(scene_id=selected_scene_left),
+                    CameraSeed(seed=camera_seed_left)
+                )
+            )
 
-        # TODO:
-        # We need a method that, given an ImageImageSignatureVector, returns the path to the render, or requests a render if it doesn't exist yet and then returns the path
+            signature_vector_right = ImageImageSignatureVector(
+                variant_attributes=(hdri_attribute,),
+                invariant_attributes=(
+                    SceneID(scene_id=selected_scene_right),
+                    CameraSeed(seed=camera_seed_right)
+                )
+            )
+            batch.append((signature_vector_left, signature_vector_right))
+        return batch
+
+        
+    def get_batch_of_images_given_signature_vectors(self, signature_vectors: list[tuple[ImageImageSignatureVector, ...]]) -> list[tuple[str, str]]:
+        image_paths = []
+        for sv_left, sv_right in signature_vectors:
+            left_image_path = sv_left.to_path()
+            right_image_path = sv_right.to_path()
+            image_paths.append((left_image_path, right_image_path))
+        return image_paths
+
+# Let's test this now ;)
+
+if __name__ == "__main__":
+    dataloader = ImageImageDataLoader()
+    sv_batch = dataloader.get_batch_of_signature_vectors(invariant_free_mask=image_image_is_free_invariant, batch_size=4)
+    print("Signature Vectors:")
+    for sv_left, sv_right in sv_batch:
+        print("Left:", sv_left.variant_attributes[0].name, sv_left.variant_attributes[0].z_rotation_offset_from_camera, sv_left.invariant_attributes[0].scene_id, sv_left.invariant_attributes[1].seed)
+        print("Right:", sv_right.variant_attributes[0].name, sv_right.variant_attributes[0].z_rotation_offset_from_camera, sv_right.invariant_attributes[0].scene_id, sv_right.invariant_attributes[1].seed)
+    image_paths = dataloader.get_batch_of_images_given_signature_vectors(sv_batch)
+    print("Image Paths:")
+    for left_path, right_path in image_paths:
+        print("Left Image Path:", left_path)
+        print("Right Image Path:", right_path)

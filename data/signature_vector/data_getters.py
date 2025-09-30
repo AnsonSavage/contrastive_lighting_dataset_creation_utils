@@ -3,14 +3,14 @@ import json
 import re
 try:
     # When running from project root
-    from environment import HDRI_DIR, SCENES_DIR  # type: ignore
+    from environment import HDRI_DIR, OUTDOOR_SCENES_DIR  # type: ignore
 except ModuleNotFoundError:  # pragma: no cover
     # If executed as a package from a different CWD, attempt relative import via sys.path tweak
     import sys, pathlib
     project_root = pathlib.Path(__file__).resolve().parents[3]
     if str(project_root) not in sys.path:
         sys.path.append(str(project_root))
-    from environment import HDRI_DIR, SCENES_DIR  # type: ignore
+    from environment import HDRI_DIR, OUTDOOR_SCENES_DIR  # type: ignore
 
 cached_hdri_names = []
 
@@ -29,9 +29,9 @@ cached_scene_ids = []
 def get_available_scene_ids():
     if cached_scene_ids:
         return cached_scene_ids
-    if not os.path.isdir(SCENES_DIR):
-        raise FileNotFoundError(f"Scenes directory not found: {SCENES_DIR}")
-    cached_scene_ids.extend([f for f in os.listdir(SCENES_DIR) if f.endswith('.blend')])
+    if not os.path.isdir(OUTDOOR_SCENES_DIR):
+        raise FileNotFoundError(f"Scenes directory not found: {OUTDOOR_SCENES_DIR}")
+    cached_scene_ids.extend([f for f in os.listdir(OUTDOOR_SCENES_DIR) if f.endswith('.blend')])
     return cached_scene_ids
 
 def get_hdri_path_by_name(name: str, resolution:str = '2k', extension:str = '.exr'):
@@ -52,7 +52,7 @@ def get_hdri_path_by_name(name: str, resolution:str = '2k', extension:str = '.ex
     raise NotImplementedError("Getting the highest resolution HDRI not yet implemented")
 
 def get_scene_path_by_id(scene_id: str):
-    scene_path = os.path.join(SCENES_DIR, scene_id)
+    scene_path = os.path.join(OUTDOOR_SCENES_DIR, scene_id)
     if not os.path.exists(scene_path):
-        raise ValueError(f"Scene path {scene_path} does not exist (SCENES_DIR={SCENES_DIR})")
+        raise ValueError(f"Scene path {scene_path} does not exist (OUTDOOR_SCENES_DIR={OUTDOOR_SCENES_DIR})")
     return scene_path
