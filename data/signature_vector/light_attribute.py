@@ -1,6 +1,9 @@
 from enum import Enum, auto
 from dataclasses import dataclass
 from .attribute import VariantAttribute
+import os
+import json
+import argparse
 
 class LightSize(Enum):
     SMALL = auto()
@@ -62,6 +65,9 @@ class ContrastLevel(Enum):
     MEDIUM = auto()
     HIGH = auto()
 
+required_enums_outdoor = set([IndoorOutdoor, NaturalArtificial, TimeOfDay, ContrastLevel])
+required_enums_indoor = set([IndoorOutdoor, NaturalArtificial, ContrastLevel]) # If you're indoor, you don't need time of day
+
 category_to_enum_maper = {
     'outdoor': IndoorOutdoor.OUTDOOR,
     'natural light': NaturalArtificial.NATURAL,
@@ -91,12 +97,19 @@ class RimLight(VirtualLight):
 import os
 import json
 if __name__ == "__main__":
-    hdri_directory = r'C:\Users\yaboy\OneDrive\Documents\BYU\Masters_Thesis\contrastive_lighting_dataset_creation_utils\dummy_data\hdri'
+    parser = argparse.ArgumentParser(description="List folders in an HDRI directory.")
+    parser.add_argument("hdri_directory", type=str, help="Path to the HDRI directory")
+    args = parser.parse_args()
+    hdri_directory = args.hdri_directory
     for folder in os.listdir(hdri_directory):
         if not os.path.isdir(os.path.join(hdri_directory, folder)):
             continue
         print(folder)
         json_path = os.path.join(hdri_directory, folder, f"{folder}_asset_metadata.json")
         categories = json.load(open(json_path))['info']['categories']
-        for category in categories:
-            print('\t', category_to_enum_maper.get(category.lower(), f"Unknown category: {category}"))
+        my_properties = [category_to_enum_maper[category] for category in categories if category in category_to_enum_maper]
+        # ensure we have all the required enums represented
+        if IndoorOutdoor.INDOOR in [prop for prop in my_properties]:
+            assert required_enums_indoor.issubset(set(type(prop) for prop in my_properties)), f"Missing required enums in {folder}: {required_enums_indoor - set(type(prop) for prop in my_properties)}"
+        else:
+            assert required_enums_outdoor.issubset(set(type(prop) for prop in my_properties)), f"Missing required enums in {folder}: {required_enums_outdoor - set(type(prop) for prop in my_properties)}"
