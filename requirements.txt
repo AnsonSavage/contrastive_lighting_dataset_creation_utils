@@ -1,0 +1,5 @@
+# Core dependencies for contrastive lighting dataset tooling
+python-dotenv>=1.0
+requests>=2.31
+# torch is optional; uncomment if using dataloader / model code
+# torch

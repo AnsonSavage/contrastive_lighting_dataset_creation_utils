@@ -25,6 +25,7 @@ but continue with the RNG sequence for the other tasks.
 '''
 
 import os
+from environment import BLENDER_PATH, DATA_PATH
 import random
 import subprocess
 
@@ -52,8 +53,9 @@ image_image_is_free_invariant = (False, False)
 image_image_is_free_variant = (True)
 
 class RenderGenerator:
-    def __init__(self):
-        self.path_to_blender = ''
+    def __init__(self, blender_path: str | None = None):
+        # Use provided path or fall back to env BLENDER_PATH
+        self.path_to_blender = blender_path or BLENDER_PATH
     
     def do_render(self, signature_vector: SignatureVector, output_path: str, headless: bool = True) -> str:
         subprocess.run([
@@ -67,10 +69,10 @@ class ImageImageSignatureVector(SignatureVector):
     def __init__(self, variant_attributes: tuple[HDRIName], invariant_attributes: tuple[SceneID, CameraSeed]):
         super().__init__(variant_attributes, invariant_attributes)
     def to_path(self):
-        # Obviously this might be violating SSP, but it's a start
-        self.base_data_path = r'C:\Users\yaboy\OneDrive\Documents\BYU\Masters_Thesis\contrastive_lighting_dataset_creation_utils\dummy_data\\'
+        # Build path relative to DATA_PATH/renders (future substructure could be added)
+        base_data_path = os.path.join(DATA_PATH, 'renders')
         path = os.path.join(
-            self.base_data_path,
+            base_data_path,
             self.invariant_attributes[0].scene_id,
             self.variant_attributes[0].name,
             f"camera_{self.invariant_attributes[1].seed}_hdri_offset_{self.variant_attributes[0].z_rotation_offset_from_camera}.png"
