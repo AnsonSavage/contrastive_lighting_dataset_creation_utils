@@ -83,7 +83,14 @@ category_to_enum_map = {
 }
 
 @dataclass
-class HDRI(LightSourceAttribute):
+class HDRIName(LightSourceAttribute):
+    """ Properties of the HDRI useful for contrastive image-image traingin"""
+    name: str
+    z_rotation_offset_from_camera: float
+
+@dataclass
+class HDRIProperties(LightSourceAttribute):
+    """ Properties of the HDRI useful for text description generation """
     time_of_day: TimeOfDay | None
     indoor_outdoor: IndoorOutdoor
     natural_artificial: NaturalArtificial

@@ -26,6 +26,12 @@ but continue with the RNG sequence for the other tasks.
 
 import random
 
+import torch
+from .signature_vector.signature_vector import SignatureVector
+from .signature_vector.light_attribute import HDRIName
+from .signature_vector.invariant_attributes import SceneID, CameraSeed
+from .signature_vector.data_getters import get_available_scene_ids, get_available_hdris_names
+
 # Make a separate random number generator for each task
 image_image_rng = random.Random(0)
 image_text_image_based_rng = random.Random(1)
@@ -37,3 +43,68 @@ image_text_real_image_lighting_rng = random.Random(5)
 task_selector_rng = random.Random(6) # I think this will be preferred to simply looping through each task, we could set up importance sampling
 
 task = 0 # let's just fix the task to 0 for now for simplicity.
+
+# Alright, I'm just kinda free coding because I'm not exactly sure what this will look like yet., we'll figure it out as we go :)
+
+image_image_is_free_invariant = (False, False)
+image_image_is_free_variant = (True)
+
+class ImageImageSignatureVector(SignatureVector):
+    def __init__(self, variant_attributes: tuple[HDRIName], invariant_attributes: tuple[SceneID, CameraSeed]):
+        super().__init__(variant_attributes, invariant_attributes)
+
+def get_render_by_signature_vector(signature_vector: ImageImageSignatureVector) -> torch.Tensor:
+    # This function will need to look up the appropriate render based on the signature vector
+    # If it's on disk, it'll just load that, otherwise it will request a render of it
+    pass
+
+class ImageImageDataLoader:
+    def get_batch(self, invariant_free_mask, batch_size:int = None) -> ImageImageSignatureVector: # normally would also include a variant free mask, but this is true trivially in this case.
+        batch_size = 32 # If none, should it get the biggest batch size it can?
+        # So, basically what we need to do now is:
+        """
+        - If the SceneID is not free, we need to select a single random scene
+        - Similarly, if the CameraSeed is not free, we need to select a single random camera seed
+
+        # Otherwise, we sample those with replacement
+
+
+        - The HDRI name will always be free, so we can just sample that without replacement
+        """
+
+        # TODO: you should probably also do some digging into whether you can support multiple positive pairs in your batch.
+        # For now, we're just going to have one positive pair per batch.
+
+        selected_scene_left = None
+        selected_scene_right = None
+        for i in range(len(self.invariant_attributes)):
+            is_free = invariant_free_mask[i]
+            attribute = self.invariant_attributes[i]
+            if not is_free:
+                if isinstance(attribute, SceneID): # TODO: should this be handled via polymorphism?
+                    # Select a single random scene ID
+                    available_scenes = get_available_scene_ids()
+                    selected_scene_left = image_image_rng.choice(available_scenes)
+                    selected_scene_right = image_image_rng.choice(available_scenes)
+                elif isinstance(attribute, CameraSeed):
+                    selected_seed = image_image_rng.randint(0, 1e6)
+                    attribute.seed = selected_seed
+                else:
+                    raise ValueError(f"Unknown invariant attribute type: {type(attribute)}")
+            else:
+                raise NotImplementedError("Currently only supports non-free invariant attributes")
+
+         # Okay, left side doesn't yet know what the camera HDRI offset will be yet. The right side will be informed from the left side. 
+         # Waiiittt... I like this better: what if we randomly select the HDRI offset for both sides, have the camera seed chooose the camera rotation, and then constrain the Hdri offset to be that rotation + some random offset!
+         # Okay, I really like that and I'm so glad that this clicked, haha. So much simpler.
+         # So now the question is: do we still need to pre-generate the data using the sampling from the dataloader, or do we just systematically make a bunch of it?
+        """Let's compare and contrast the two approaches:
+        - Pre-generating the data:
+          - Pros: We only generate the data we will actually train on, according to whatever sampling strategies we come up with for the dataloaders
+            - Cons: More complex to implement, need to manage storage of pre-generated data, less flexible for changing sampling strategies
+            - Cons: It doesn't allow us to sample from existing data, so knowing the "size" of the dataset is more complex.
+        - Systematically generating the data:
+            - Pros: Simpler to implement, more flexible for changing sampling strategies, can easily sample from existing data
+            - Cons: May use a ton of storage space and render power
+            - Cons: It's not really clear, how of all the possible data we could make, what is the most helpful data?
+        """
