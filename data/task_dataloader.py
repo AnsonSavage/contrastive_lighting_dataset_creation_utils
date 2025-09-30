@@ -24,13 +24,15 @@ but continue with the RNG sequence for the other tasks.
 
 '''
 
+import os
 import random
+import subprocess
 
 import torch
 from .signature_vector.signature_vector import SignatureVector
 from .signature_vector.light_attribute import HDRIName
 from .signature_vector.invariant_attributes import SceneID, CameraSeed
-from .signature_vector.data_getters import get_available_scene_ids, get_available_hdris_names
+from .signature_vector.data_getters import get_available_scene_ids, get_available_hdris_names, get_scene_path_by_id
 
 # Make a separate random number generator for each task
 image_image_rng = random.Random(0)
@@ -49,11 +51,35 @@ task = 0 # let's just fix the task to 0 for now for simplicity.
 image_image_is_free_invariant = (False, False)
 image_image_is_free_variant = (True)
 
+class RenderGenerator:
+    def __init__(self):
+        self.path_to_blender = ''
+    
+    def do_render(self, signature_vector: SignatureVector, output_path: str, headless: bool = True) -> str:
+        subprocess.run([
+            self.path_to_blender,
+            '--background' if headless else '',
+            get_scene_path_by_id(signature_vector.invariant_attributes[0].scene_id), # TODO: I don't really like how we're indexing into the signature vector like this, maybe getters would be better.
+            '--python', 'render_script.py',
+            '--', f'--output_path={output_path}'] + self.signature_vector_to_args(signature_vector)) # TODO: I guess we'll need to be able to serialize the signature vectors
+
 class ImageImageSignatureVector(SignatureVector):
     def __init__(self, variant_attributes: tuple[HDRIName], invariant_attributes: tuple[SceneID, CameraSeed]):
         super().__init__(variant_attributes, invariant_attributes)
+    def to_path(self):
+        # Obviously this might be violating SSP, but it's a start
+        self.base_data_path = r'C:\Users\yaboy\OneDrive\Documents\BYU\Masters_Thesis\contrastive_lighting_dataset_creation_utils\dummy_data\\'
+        path = os.path.join(
+            self.base_data_path,
+            self.invariant_attributes[0].scene_id,
+            self.variant_attributes[0].name,
+            f"camera_{self.invariant_attributes[1].seed}_hdri_offset_{self.variant_attributes[0].z_rotation_offset_from_camera}.png"
+        )
+        if not os.path.exists(path):
+            raise ValueError(f"Path {path} does not exist") # TODO: request the render and then ensure it gets saved to that path. Eventually we'll want to do some kind of lazy thing here because we don't want to have to reaload the scene a bunch of times, but we'll get to that later.
+        return path
 
-def get_render_by_signature_vector(signature_vector: ImageImageSignatureVector) -> torch.Tensor:
+def get_image_path_by_signature_vector(signature_vector: ImageImageSignatureVector) -> torch.Tensor:
     # This function will need to look up the appropriate render based on the signature vector
     # If it's on disk, it'll just load that, otherwise it will request a render of it
     pass
@@ -106,5 +132,15 @@ class ImageImageDataLoader:
         - Systematically generating the data:
             - Pros: Simpler to implement, more flexible for changing sampling strategies, can easily sample from existing data
             - Cons: May use a ton of storage space and render power
-            - Cons: It's not really clear, how of all the possible data we could make, what is the most helpful data?
+            - Cons: It's not really clear, out of all the possible data we could make, what is the most helpful data?
         """
+
+        """ 
+        Here's what I'm thinking:
+        - if we systematically generate it, we can flag data somehow to be able to be grouped as a task, that way future runs can be more flexible and grab one task at a time. Tasks can have references to the paths of the images, that way images could be used across tasks, if necessary
+        So, we can have a 'read' mode where the number of tasks is simply fixed to the generated tasks. Could be good, I like it. The 'read' mode I think could be implemented using a dataloader
+        # So, we'll have a giant pool of rendered images, and each task could be a JSON file or otherwise that references images in that pool
+        """
+
+        # TODO:
+        # We need a method that, given an ImageImageSignatureVector, returns the path to the render, or requests a render if it doesn't exist yet and then returns the path

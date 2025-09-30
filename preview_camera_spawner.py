@@ -161,9 +161,7 @@ class CameraSpawner:
 
         up = mathutils.Vector((0, 0, 1))
         camera_right = camera_direction.cross(up).normalized()
-        
         camera_up = camera_right.cross(camera_direction).normalized()
-
         rotation_transform = mathutils.Matrix([camera_right, camera_up, -camera_direction]).transposed().to_4x4()
 
         translation_transform = mathutils.Matrix.Translation(camera_position)

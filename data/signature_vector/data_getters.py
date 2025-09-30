@@ -36,3 +36,10 @@ def get_hdri_path_by_name(name: str, resolution:str = '2k', extension:str = '.ex
         else:
             raise ValueError(f"HDRI file with resolution {resolution} not found in {hdri_folder}")
     raise NotImplementedError("Getting the highest resolution HDRI not yet implemented")
+
+def get_scene_path_by_id(scene_id: str):
+    scene_directory = r'C:\Users\yaboy\OneDrive\Documents\BYU\Masters_Thesis\contrastive_lighting_dataset_creation_utils\dummy_data\scenes'
+    scene_path = os.path.join(scene_directory, scene_id)
+    if not os.path.exists(scene_path):
+        raise ValueError(f"Scene path {scene_path} does not exist")
+    return scene_path
