@@ -1,10 +1,12 @@
 # Assumes that Blender is loaded up with the relevant scene... Although loading the scene here wouldn't be bad.
 
+import pickle
 import math
 import bpy
 # Add this file's directory to the Python path for imports
 import sys
 import pathlib
+from data.image_text_instructions_task import ImageTextInstructSignatureVector
 current_dir = pathlib.Path(__file__).resolve().parent
 if str(current_dir) not in sys.path:
     sys.path.append(str(current_dir))
@@ -19,14 +21,20 @@ def log(msg: str) -> None:
     if should_log:
         print(f"[render_manager] {msg}")
 
-class ImageImageRenderManager:
-    '''
-    Is capable of rendering to disk, given the following:
-        - A render output path
-        - A camera seed
-        - An HDRI name and rotation offset
-    
-    '''
+class RenderManager:
+    def _set_render_settings(self, output_path:str, resolution = (384, 384), use_denoising = True, use_denoising_gpu = True, samples = 128) -> None:
+        # Finally, we need to set the output path and render the image
+        scene = bpy.context.scene
+        scene.render.filepath = output_path
+        scene.render.resolution_x = resolution[0]
+        scene.render.resolution_y = resolution[1]
+        scene.render.image_settings.file_format = 'PNG'
+        scene.render.image_settings.color_mode = 'RGB'
+        scene.render.resolution_percentage = 100
+        scene.cycles.use_denoising = use_denoising
+        scene.cycles.denoising_use_gpu = use_denoising_gpu
+        scene.cycles.samples = samples
+
 
     def _set_hdri(self, hdri_path: str, strength: float = 1.0, rotation_degrees: float = 0.0) -> None:
         """
@@ -67,17 +75,21 @@ class ImageImageRenderManager:
         
         # Optional: Set strength of the HDRI (default is 1.0)
         background.inputs["Strength"].default_value = strength
+
+class ImageImageRenderManager(RenderManager):
+    '''
+    Is capable of rendering to disk, given the following:
+        - A render output path
+        - A camera seed
+        - An HDRI name and rotation offset
     
+    '''
     def render(self,
                 output_path: str,
             #    scene_path: str,
                 camera_seed: int,
                 hdri_path: str,
                 hdri_z_rotation_offset: float,
-                resolution = (384, 384),
-                use_denoising = True,
-                use_denoising_gpu = True,
-                samples = 128
             ) -> str:
         camera_spawner = CameraSpawner( # TODO: right now, this assumes we're always using the procedural camera setup
             look_from_volume_name=LOOK_FROM_VOLUME_OBJ,
@@ -104,25 +116,15 @@ class ImageImageRenderManager:
 
         # Now that the camera is in place, we need to set the HDRI
         self._set_hdri(hdri_path, strength=1.0, rotation_degrees=hdri_rotation)
-
-        # Finally, we need to set the output path and render the image
-        scene = bpy.context.scene
-        scene.render.filepath = output_path
-        scene.render.resolution_x = resolution[0]
-        scene.render.resolution_y = resolution[1]
-        scene.render.image_settings.file_format = 'PNG'
-        scene.render.image_settings.color_mode = 'RGB'
-        scene.render.resolution_percentage = 100
-        scene.cycles.use_denoising = use_denoising
-        scene.cycles.denoising_use_gpu = use_denoising_gpu
-        scene.cycles.samples = samples
-
+        self._set_render_settings(output_path, resolution=(384, 384), use_denoising=True, use_denoising_gpu=True, samples=128)
         bpy.ops.render.render(write_still=True)
 
         return output_path
 
-# Read in command line arguments including --output_path, --scene_path, --camera_seed, --hdri_path, --hdri_z_rotation_offset
+class ImageTextRenderManager(RenderManager):
+    pass
 
+# Read in command line arguments including --output_path, --scene_path, --camera_seed, --hdri_path, --hdri_z_rotation_offset
 if __name__ == "__main__":
     try:
         dashdash_index = sys.argv.index('--')
@@ -135,19 +137,28 @@ if __name__ == "__main__":
     )
     parser.add_argument('--output_path', type=str, required=True, help='Path to save the rendered image.')
     # parser.add_argument('--scene_path', type=str, required=True, help='Path to the Blender scene file (.blend).')
-    parser.add_argument('--camera_seed', type=int, required=True, help='Seed for the camera randomness.')
-    parser.add_argument('--hdri_path', type=str, required=True, help='Path to the HDRI file.')
-    parser.add_argument('--hdri_z_rotation_offset', type=float, required=True, help='Z rotation offset for the HDRI in degrees.')
+    mode = 'image-image'  # or 'image-text-instruct'
+    if mode == 'image-image':
+        parser.add_argument('--camera_seed', type=int, required=True, help='Seed for the camera randomness.')
+        parser.add_argument('--hdri_path', type=str, required=True, help='Path to the HDRI file.')
+        parser.add_argument('--hdri_z_rotation_offset', type=float, required=True, help='Z rotation offset for the HDRI in degrees.')
 
-    # Parse only the relevant slice
-    args = parser.parse_args(args_after_dashdash)
+        # Parse only the relevant slice
+        args = parser.parse_args(args_after_dashdash)
 
-    render_manager = ImageImageRenderManager()
-    result_path = render_manager.render(
-        output_path=args.output_path,
-        # scene_path=args.scene_path,
-        camera_seed=args.camera_seed,
-        hdri_path=args.hdri_path,
-        hdri_z_rotation_offset=args.hdri_z_rotation_offset
-    )
-    log(f"Render complete: {result_path}")
+        render_manager = ImageImageRenderManager()
+        result_path = render_manager.render(
+            output_path=args.output_path,
+            # scene_path=args.scene_path,
+            camera_seed=args.camera_seed,
+            hdri_path=args.hdri_path,
+            hdri_z_rotation_offset=args.hdri_z_rotation_offset
+        )
+        log(f"Render complete: {result_path}")
+    else:
+        parser.add_argument('--serialized_signature_vector', type=str, required=True, help='Serialized signature vector in pickle format.')
+        args = parser.parse_args(args_after_dashdash)
+
+        signature_vector = pickle.loads(args.serialized_signature_vector)
+
+        print(signature_vector)
