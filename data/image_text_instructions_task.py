@@ -68,6 +68,7 @@ if __name__ == "__main__":
     # Quick test
     dataloader = ImageTextDataLoader()
     batch = dataloader.get_batch_of_signature_vectors(batch_size=8)
-    print(batch)
-    # image_paths = dataloader.get_batch_of_images_given_signature_vectors(batch)
-    # print(image_paths)
+    for sv, instruction in batch:
+        print(sv)
+        print("Instruction:", instruction)
+        print("-" * 60)

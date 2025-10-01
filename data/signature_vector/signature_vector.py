@@ -1,4 +1,7 @@
 import random
+from dataclasses import is_dataclass, asdict
+from enum import Enum
+import pprint
 from .attribute import VariantAttribute, InvariantAttribute
 
 class SignatureVector:
@@ -6,6 +9,38 @@ class SignatureVector:
     def __init__(self, variant_attributes: tuple[VariantAttribute, ...], invariant_attributes: tuple[InvariantAttribute, ...]):
         self.variant_attributes = variant_attributes
         self.invariant_attributes = invariant_attributes
+    def __repr__(self) -> str:
+        # Keep it very simple; rely on dataclass / Enum default reprs.
+        return (f"{self.__class__.__name__}(variant={self.variant_attributes}, "
+                f"invariant={self.invariant_attributes})")
+
+    def to_dict(self) -> dict:
+        """Lightweight serialization using built-ins.
+
+        Dataclasses -> dict (enum fields converted to their names)
+        Enums -> Fully-qualified NAME (Class.MEMBER)
+        Other objects -> str(attr)
+        """
+        def serialize(attr):
+            if is_dataclass(attr):
+                d = asdict(attr)
+                for k, v in d.items():
+                    if isinstance(v, Enum):
+                        d[k] = v.name
+                d['__type__'] = attr.__class__.__name__
+                return d
+            if isinstance(attr, Enum):
+                return f"{attr.__class__.__name__}.{attr.name}"
+            return str(attr)
+        return {
+            'class': self.__class__.__name__,
+            'variant': [serialize(a) for a in self.variant_attributes],
+            'invariant': [serialize(a) for a in self.invariant_attributes]
+        }
+    
+    def __str__(self) -> str:
+        # Pretty printed for human readability using pprint
+        return pprint.pformat(self.to_dict(), sort_dicts=True)
 
 class SignatureVectorFactory:
     def __init__(
