@@ -21,7 +21,7 @@ class SignatureVector:
         Enums -> Fully-qualified NAME (Class.MEMBER)
         Other objects -> str(attr)
         """
-        def serialize(attr):
+        def serialize(attr): # TODO: This could probably be written recursively so that it doesn't only go two levels deep
             if is_dataclass(attr):
                 d = asdict(attr)
                 for k, v in d.items():
@@ -40,7 +40,7 @@ class SignatureVector:
     
     def __str__(self) -> str:
         # Pretty printed for human readability using pprint
-        return pprint.pformat(self.to_dict(), sort_dicts=True)
+        return pprint.pformat(self.to_dict())
 
 class SignatureVectorFactory:
     def __init__(
@@ -77,7 +77,7 @@ class SignatureVectorFactory:
                 self.free_invariant_classes.append(attr_type)
             i += 1
         
-    def sample_signature_vector(self, sv_cls: type[SignatureVector] = SignatureVector) -> SignatureVector:
+    def sample_signature_vector(self, sv_cls: type[SignatureVector] = SignatureVector) -> SignatureVector: # TODO: Add the ability to not create duplicate signature vectors when sampling
         """Sample a signature vector instance.
 
         Parameters

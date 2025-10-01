@@ -2,7 +2,7 @@ import os
 import random
 from environment import BLENDER_PATH, DATA_PATH
 from .signature_vector.signature_vector import SignatureVector
-from .signature_vector.light_attribute import HDRIName, VirtualLight
+from .signature_vector.light_attribute import HDRIName, KeyLight, FillLight, RimLight, VirtualLight
 from .signature_vector.invariant_attributes import SceneID, CameraSeed, ContentSeed
 from .signature_vector.data_getters import OutdoorSceneData
 from .signature_vector.signature_vector import SignatureVectorFactory
@@ -36,9 +36,9 @@ class ImageTextDataLoader:
         #  think we'll move the masks to another factory classs that's in charge of sampling them, importance sampling, and rejection sampling, etc.
         image_text_signature_vector_factory = SignatureVectorFactory(
             variant_attributes_and_freedom=(
-                (VirtualLight, True), # Key light
-                (VirtualLight, True), # Fill light
-                (VirtualLight, True)  # Rim light
+                (KeyLight, True), # Key light
+                (FillLight, True), # Fill light
+                (RimLight, True)  # Rim light
             ),
             invariant_attributes_and_freedom=(
                 (SceneID, False),

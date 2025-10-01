@@ -9,7 +9,7 @@ class Attribute(ABC):
     @classmethod
     @abstractmethod
     def sample_value(cls, rng: random.Random):
-        pass
+        raise NotImplementedError("Must be implemented in subclass.")
 
 class InvariantAttribute(Attribute):
     pass
@@ -60,5 +60,6 @@ class EnumAttribute(Enum):
         # Use built-in weighted sampling (k=1) and return the single element
         return rng.choices(members, weights=aligned_weights, k=1)[0]
 
+    @classmethod
     def sample_value(cls, rng: random.Random):
         return cls._weighted_sample(rng)

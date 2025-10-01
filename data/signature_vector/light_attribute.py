@@ -106,6 +106,15 @@ class VirtualLight(LightSourceAttribute):
     light_intensity: LightIntensity
     light_color: LightColor
 
+    @classmethod
+    def sample_value(cls, rng):
+        return cls(
+            light_size=LightSize.sample_value(rng),
+            light_direction=LightDirection.sample_value(rng),
+            light_intensity=LightIntensity.sample_value(rng),
+            light_color=BlackbodyLightColor.sample_value(rng) # TODO: currently hardcoded to be blackbody
+        )
+
 class KeyLight(VirtualLight):
     pass
 class FillLight(VirtualLight):
