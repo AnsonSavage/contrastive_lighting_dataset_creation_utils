@@ -1,3 +1,4 @@
+import pickle
 import os
 import random
 from environment import BLENDER_PATH, DATA_PATH
@@ -53,7 +54,7 @@ class ImageTextDataLoader:
             batch.append(
                 (
                     image_text_signature_vector_factory.sample_signature_vector(ImageTextInstructSignatureVector),
-                    "A photo of a scene with dramatic lighting." # Placeholder text instruction for now
+                    "A photo of a scene with dramatic lighting." #TODO: Placeholder text instruction for now
                 )
             )
         return batch
@@ -72,3 +73,4 @@ if __name__ == "__main__":
         print(sv)
         print("Instruction:", instruction)
         print("-" * 60)
+        print(pickle.dumps(sv))

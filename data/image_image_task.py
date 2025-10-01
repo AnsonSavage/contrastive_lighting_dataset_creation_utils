@@ -70,6 +70,7 @@ class ImageImageDataLoader:
 
         # TODO: you should probably also do some digging into whether you can support multiple positive pairs in your batch.
         # For now, we're just going to have one positive pair per batch.
+        # TODO: Once you add support for rejection sampling, etc. you can do the same kind of sampling here that you do in the image_text_instructions_task.py file.
 
         available_scenes = OutdoorSceneData().get_available_outdoor_scene_ids()
         available_hdris = HDRIData.get_available_hdris_names()
@@ -83,7 +84,7 @@ class ImageImageDataLoader:
         camera_seed_right = image_image_rng.randint(0, 1e6)
 
         batch = []
-        for i in range(batch_size): # TODO: later you can support the free mask, right now we're assuming everything is not free :)
+        for i in range(batch_size):
             selected_hdri = selection_of_hdris[i]
             selected_rotation = rotations[i]
             hdri_attribute = HDRIName(
