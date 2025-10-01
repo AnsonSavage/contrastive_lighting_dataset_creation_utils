@@ -1,17 +1,19 @@
 from __future__ import annotations
-from enum import Enum, auto
+from enum import auto
 from dataclasses import dataclass
 from .attribute import VariantAttribute
 import os
 import json
 import argparse
 
-class LightSize(Enum):
+from .attribute import EnumAttribute
+
+class LightSize(EnumAttribute):
     SMALL = auto()
     MEDIUM = auto()
     LARGE = auto()
 
-class LightDirection(Enum):
+class LightDirection(EnumAttribute):
     BACK_RIGHT = auto()
     BACK_LEFT = auto()
     BACK = auto()
@@ -23,13 +25,13 @@ class LightDirection(Enum):
     TOP = auto()
     BOTTOM = auto()
 
-class LightIntensity(Enum):
+class LightIntensity(EnumAttribute):
     """ Size and distance-independent intensity """
     LOW = auto()
     MEDIUM = auto()
     HIGH = auto()
 
-class LightColor(Enum):
+class LightColor(EnumAttribute):
     pass
 class BlackbodyLightColor(LightColor):
     WARM = auto()
@@ -50,18 +52,18 @@ class HueLightColor(LightColor):
 class LightSourceAttribute(VariantAttribute):
     pass
 
-class TimeOfDay(Enum):
+class TimeOfDay(EnumAttribute):
     SUNRISE_SUNSET = auto()
     MORNING_AFTERNOON = auto()
     MIDDAY = auto()
     NIGHT = auto()
-class IndoorOutdoor(Enum):
+class IndoorOutdoor(EnumAttribute):
     INDOOR = auto()
     OUTDOOR = auto()
-class NaturalArtificial(Enum):
+class NaturalArtificial(EnumAttribute):
     NATURAL = auto()
     ARTIFICIAL = auto()
-class ContrastLevel(Enum):
+class ContrastLevel(EnumAttribute):
     LOW = auto()
     MEDIUM = auto()
     HIGH = auto()

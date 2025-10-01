@@ -56,7 +56,7 @@ class ImageImageSignatureVector(SignatureVector):
         return path
 
 class ImageImageDataLoader:
-    def get_batch_of_signature_vectors(self, invariant_free_mask, batch_size:int = None) -> list[tuple[ImageImageSignatureVector]]: # normally would also include a variant free mask, but this is true trivially in this case.
+    def get_batch_of_signature_vectors(self, invariant_free_mask, batch_size:int = None) -> list[tuple[ImageImageSignatureVector, ImageImageSignatureVector]]: # normally would also include a variant free mask, but this is true trivially in this case.
         # If batch_size is none, should it get the biggest batch size it can?
         # So, basically what we need to do now is:
         """
@@ -109,8 +109,8 @@ class ImageImageDataLoader:
             batch.append((signature_vector_left, signature_vector_right))
         return batch
 
-        
-    def get_batch_of_images_given_signature_vectors(self, signature_vectors: list[tuple[ImageImageSignatureVector, ...]]) -> list[tuple[str, str]]:
+
+    def get_batch_of_images_given_signature_vectors(self, signature_vectors: list[tuple[ImageImageSignatureVector, ImageImageSignatureVector]]) -> list[tuple[str, str]]:
         image_paths = []
         for sv_left, sv_right in signature_vectors:
             left_image_path = sv_left.to_path()
