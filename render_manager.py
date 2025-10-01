@@ -22,7 +22,7 @@ def log(msg: str) -> None:
     if should_log:
         print(f"[render_manager] {msg}")
 
-class RenderManager:
+class RenderManager: # TODO: should probably break this into a scene configuration class and a render manager
     def _set_render_settings(self, output_path:str, resolution = (384, 384), use_denoising = True, use_denoising_gpu = True, samples = 128) -> None:
         # Finally, we need to set the output path and render the image
         scene = bpy.context.scene

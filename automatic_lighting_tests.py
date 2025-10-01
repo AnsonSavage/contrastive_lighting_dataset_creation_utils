@@ -58,7 +58,7 @@ def add_reverse_key_light(cam: bpy.types.Object, obj: bpy.types.Object, light_si
     camera_right = -camera_left
 
     # stochastically decide whether the reverse keylight will be to the left or right of the camera
-    camera_left_right_amount = 1
+    camera_left_right_amount = 0.8
     if random.random() < 0.5:
         object_to_light += camera_right * camera_left_right_amount
     else:
