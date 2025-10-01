@@ -1,6 +1,7 @@
 import pickle
 import os
 import random
+import base64
 from environment import BLENDER_PATH, DATA_PATH
 from .signature_vector.signature_vector import SignatureVector
 from .signature_vector.light_attribute import HDRIName, KeyLight, FillLight, RimLight, VirtualLight
@@ -18,16 +19,16 @@ class ImageTextInstructRenderGenerator:
 
     def do_render(self, signature_vector: 'ImageTextInstructSignatureVector', output_path: str):
         # Call Blender in background mode with the current script and pass the necessary arguments
-        serialized_sv = pickle.dumps(signature_vector)
+        serialized_sv = base64.b64encode(pickle.dumps(signature_vector)).decode('ascii')
         cmd = [
             self.path_to_blender,
             '--background',  # Run in background mode
             '--python', 'render_manager.py',  # Path to this script
             '--',  # Arguments after this are passed to the script
             '--output_path', output_path,
-            '--serialized_signature_vector', serialized_sv.hex()  # Pass the serialized signature vector as a hex string
+            '--serialized_signature_vector', serialized_sv
         ]
-        print("Running command:", ' '.join(cmd))  # For debugging purposes
+        # print("Running command:", ' '.join(cmd))  # For debugging purposes
         subprocess.run(cmd, check=True)
         return output_path
 

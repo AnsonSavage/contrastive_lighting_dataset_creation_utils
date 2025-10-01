@@ -11,13 +11,14 @@ from pathlib import Path
 
 try:
     from dotenv import load_dotenv  # type: ignore
+    # Load .env file once on import (shell env vars override .env values)
+    load_dotenv(override=False)
 except ImportError as e:  # pragma: no cover
-    raise ImportError(
-        "python-dotenv is required. Install with `pip install python-dotenv` or add it to requirements.txt"
-    ) from e
+    print(".env file not loaded; proceeding with existing environment variables.")
+    # raise ImportError(
+    #     "python-dotenv is required. Install with `pip install python-dotenv` or add it to requirements.txt"
+    # ) from e
 
-# Load .env file once on import (shell env vars override .env values)
-load_dotenv(override=False)
 
 REQUIRED_VARS = ["BLENDER_PATH", "DATA_PATH"]
 missing = [v for v in REQUIRED_VARS if not os.getenv(v)]

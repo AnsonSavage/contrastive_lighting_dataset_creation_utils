@@ -6,12 +6,13 @@ import bpy
 # Add this file's directory to the Python path for imports
 import sys
 import pathlib
-from data.image_text_instructions_task import ImageTextInstructSignatureVector
 current_dir = pathlib.Path(__file__).resolve().parent
 if str(current_dir) not in sys.path:
     sys.path.append(str(current_dir))
 
+from data.image_text_instructions_task import ImageTextInstructSignatureVector
 from camera_spawner import CameraSpawner
+import base64
 from configure_camera_collections import PROCEDURAL_CAMERA_OBJ, LOOK_FROM_VOLUME_OBJ, LOOK_AT_VOLUME_OBJ
 import argparse
 
@@ -137,7 +138,8 @@ if __name__ == "__main__":
     )
     parser.add_argument('--output_path', type=str, required=True, help='Path to save the rendered image.')
     # parser.add_argument('--scene_path', type=str, required=True, help='Path to the Blender scene file (.blend).')
-    mode = 'image-image'  # or 'image-text-instruct'
+    # mode = 'image-image'  # or 'image-text-instruct'
+    mode = 'image-text-instruct' # TODO: formalize the mode a bit more :)
     if mode == 'image-image':
         parser.add_argument('--camera_seed', type=int, required=True, help='Seed for the camera randomness.')
         parser.add_argument('--hdri_path', type=str, required=True, help='Path to the HDRI file.')
@@ -159,6 +161,7 @@ if __name__ == "__main__":
         parser.add_argument('--serialized_signature_vector', type=str, required=True, help='Serialized signature vector in pickle format.')
         args = parser.parse_args(args_after_dashdash)
 
-        signature_vector = pickle.loads(args.serialized_signature_vector)
-
+        signature_vector_str = args.serialized_signature_vector
+        signature_vector_bytes = base64.b64decode(signature_vector_str.encode('ascii'))
+        signature_vector = pickle.loads(signature_vector_bytes)
         print(signature_vector)
