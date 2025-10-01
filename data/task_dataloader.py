@@ -28,7 +28,6 @@ from .image_image_task import ImageImageDataLoader
 
 # Make a separate random number generator for each task
 image_text_image_based_rng = random.Random(1)
-image_text_instruction_based_rng = random.Random(2)
 image_text_generated_image_rng = random.Random(3)
 image_text_real_image_aesthetic_rng = random.Random(4)
 image_text_real_image_lighting_rng = random.Random(5)

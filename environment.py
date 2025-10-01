@@ -43,6 +43,7 @@ if not Path(DATA_PATH).exists():
 # Helpful derived subpaths (lazy creation optional future)
 SCENES_DIR = os.path.join(DATA_PATH, "scenes")
 OUTDOOR_SCENES_DIR = os.path.join(SCENES_DIR, "outdoor")
+INDOOR_SCENES_DIR = os.path.join(SCENES_DIR, "indoor")
 HDRI_DIR = os.path.join(DATA_PATH, "hdri")
 RENDERS_DIR = os.path.join(DATA_PATH, "renders")
 
