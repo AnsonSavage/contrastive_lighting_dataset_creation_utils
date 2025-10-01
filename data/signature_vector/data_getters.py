@@ -46,15 +46,15 @@ class HDRIData:
 class SceneData:
     def __init__(self, path_prefix):
         self.path_prefix = path_prefix
-        self.cached_scene_ids = []
+        self.cached_scene_ids:list = None
 
     def get_available_scene_ids(self):
-        if cached_scene_ids:
-            return cached_scene_ids
+        if self.cached_scene_ids:
+            return self.cached_scene_ids
         if not os.path.isdir(self.path_prefix):
             raise FileNotFoundError(f"Scenes directory not found: {self.path_prefix}")
-        cached_scene_ids.extend([f for f in os.listdir(self.path_prefix) if f.endswith('.blend')])
-        return cached_scene_ids
+        self.cached_scene_ids = [f for f in os.listdir(self.path_prefix) if f.endswith('.blend')]
+        return self.cached_scene_ids
 
 
     def get_scene_path_by_id(self, scene_id: str):
