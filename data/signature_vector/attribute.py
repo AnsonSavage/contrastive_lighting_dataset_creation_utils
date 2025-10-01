@@ -6,6 +6,7 @@ from typing import Dict, Optional, Sequence, TypeVar, Type
 E = TypeVar("E", bound="EnumAttribute")
 
 class Attribute(ABC):
+    @classmethod
     @abstractmethod
     def sample_value(cls, rng: random.Random):
         pass

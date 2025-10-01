@@ -8,7 +8,7 @@ class SceneID(InvariantAttribute):
     scene_id: str
     @classmethod
     def sample_value(cls, rng: random.Random) -> 'SceneID':
-        available_scenes = OutdoorSceneData().get_available_outdoor_scene_ids()
+        available_scenes = OutdoorSceneData().get_available_scene_ids()
         selected_scene = rng.choice(available_scenes)
         return cls(scene_id=selected_scene)
 

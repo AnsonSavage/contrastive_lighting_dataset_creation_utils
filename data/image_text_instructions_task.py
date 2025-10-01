@@ -67,7 +67,7 @@ class ImageTextDataLoader:
 if __name__ == "__main__":
     # Quick test
     dataloader = ImageTextDataLoader()
-    batch = dataloader.get_batch_of_signature_vectors(batch_size=2)
+    batch = dataloader.get_batch_of_signature_vectors(batch_size=8)
     print(batch)
     # image_paths = dataloader.get_batch_of_images_given_signature_vectors(batch)
     # print(image_paths)
