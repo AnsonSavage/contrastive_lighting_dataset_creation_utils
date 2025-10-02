@@ -153,10 +153,15 @@ def process_signature_vector(
 ) -> None:
     primary_light = signature_vector.variant_attributes[0]
     primary_light_intensity = primary_light.light_intensity
-    ImageTextRenderManager()._set_light_intensity(
+    ImageTextRenderManager()._sample_light_intensity(
         light_name='TriLamp-Key',
         distance_from_object=get_distance_between_objects(bpy.data.objects.get('TriLamp-Key'), obj),
         intensity=primary_light_intensity,
+        sample_seed=random.randint(0, 1e6)
+    )
+    ImageTextRenderManager()._sample_light_color_blackbody(
+        light_name='TriLamp-Key',
+        blackbody_color=primary_light.light_color,
         sample_seed=random.randint(0, 1e6)
     )
         
@@ -169,7 +174,7 @@ text_signature_vector = ImageTextInstructSignatureVector(
         KeyLight(
             light_size=LightSize.MEDIUM,
             light_direction=LightDirection.FRONT_RIGHT,
-            light_intensity=LightIntensity.LOW,
+            light_intensity=LightIntensity.HIGH,
             light_color=BlackbodyLightColor.WARM
         ),
         FillLight(

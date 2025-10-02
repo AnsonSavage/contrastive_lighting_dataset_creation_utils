@@ -11,7 +11,7 @@ current_dir = pathlib.Path(__file__).resolve().parent
 if str(current_dir) not in sys.path:
     sys.path.append(str(current_dir))
 from data.image_text_instructions_task import ImageTextInstructSignatureVector
-from data.signature_vector.light_attribute import LightIntensity
+from data.signature_vector.light_attribute import LightIntensity, BlackbodyLightColor
 from camera_spawner import CameraSpawner
 import base64
 from configure_camera_collections import PROCEDURAL_CAMERA_OBJ, LOOK_FROM_VOLUME_OBJ, LOOK_AT_VOLUME_OBJ
@@ -122,7 +122,13 @@ class ImageImageRenderManager(RenderManager):
         return output_path
 
 class ImageTextRenderManager(RenderManager):
-    def _set_light_intensity(self, light_name: str, distance_from_object: float, intensity: LightIntensity, sample_seed: int) -> None:
+    def _sample_gaussian_in_range(self, intensity_range, rng: random.Random) -> float:
+        mu = (intensity_range[0] + intensity_range[1]) / 2
+        single_standard_deviation = (intensity_range[1] - intensity_range[0]) / 4 # 95% of values will fall within the range
+        random_gaussian_distributed_value = rng.gauss(mu=mu, sigma=single_standard_deviation)
+        clamped_value = max(intensity_range[0], min(intensity_range[1], random_gaussian_distributed_value))
+        return clamped_value
+    def _sample_light_intensity(self, light_name: str, distance_from_object: float, intensity: LightIntensity, sample_seed: int) -> None:
         light = bpy.data.lights.get(light_name)
         if light is None:
             raise ValueError(f"Light '{light_name}' not found in the scene.")
@@ -134,21 +140,15 @@ class ImageTextRenderManager(RenderManager):
         base_intensity = None
         low_range = (5, 15)
         medium_range = (15, 70)
-        high_range = (90, 250)
+        high_range = (90, 200)
 
-        def sample_gaussian_in_range(intensity_range):
-            mu = (intensity_range[0] + intensity_range[1]) / 2
-            single_standard_deviation = (intensity_range[1] - intensity_range[0]) / 4 # 95% of values will fall within the range
-            random_gaussian_distributed_value = rng.gauss(mu=mu, sigma=single_standard_deviation)
-            clamped_value = max(intensity_range[0], min(intensity_range[1], random_gaussian_distributed_value))
-            return clamped_value
 
         if intensity == LightIntensity.LOW:
-            base_intensity = sample_gaussian_in_range(low_range)
+            base_intensity = self._sample_gaussian_in_range(low_range, rng)
         elif intensity == LightIntensity.MEDIUM:
-            base_intensity = sample_gaussian_in_range(medium_range)
+            base_intensity = self._sample_gaussian_in_range(medium_range, rng)
         elif intensity == LightIntensity.HIGH:
-            base_intensity = sample_gaussian_in_range(high_range)
+            base_intensity = self._sample_gaussian_in_range(high_range, rng)
         else:
             raise ValueError(f"Unknown LightIntensity value: {intensity}")
         
@@ -160,6 +160,28 @@ class ImageTextRenderManager(RenderManager):
         light.energy = adjusted_intensity
         print(f"Set light '{light_name}' intensity to {light.energy} (base: {base_intensity}, distance from object: {distance_from_object})")
         # NOTE: in our experiments, it seemed like rim lights needed to be about 3x as intense to have a similar visual impact
+    
+    def _sample_light_color_blackbody(self, light_name: str, blackbody_color: BlackbodyLightColor, sample_seed: int) -> None:
+        rng = random.Random(sample_seed)
+        light = bpy.data.lights.get(light_name)
+        if light is None:
+            raise ValueError(f"Light '{light_name}' not found in the scene.")
+        
+        kelvin_temp = None
+        if blackbody_color == BlackbodyLightColor.COOL:
+            kelvin_temp = self._sample_gaussian_in_range((6800, 18000), rng)
+        elif blackbody_color == BlackbodyLightColor.NEUTRAL:
+            kelvin_temp = self._sample_gaussian_in_range((5700, 6500), rng)
+        elif blackbody_color == BlackbodyLightColor.WARM:
+            kelvin_temp = self._sample_gaussian_in_range((2300, 5000), rng)
+        else:
+            raise ValueError(f"Unknown BlackbodyLightColor value: {blackbody_color}")
+        light.use_temperature = True
+        light.color = (1, 1, 1) # Reset tint to white before applying temperature
+        light.temperature = kelvin_temp
+        print(f"Set light '{light_name}' color temperature to {kelvin_temp}K")
+
+        
 
 if __name__ == "__main__":
     try:
