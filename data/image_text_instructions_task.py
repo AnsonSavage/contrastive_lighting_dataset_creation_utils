@@ -29,7 +29,11 @@ class ImageTextInstructRenderGenerator:
             '--serialized_signature_vector', serialized_sv
         ]
         # print("Running command:", ' '.join(cmd))  # For debugging purposes
-        subprocess.run(cmd, check=True)
+        result = subprocess.run(cmd, capture_output=True, check=True)
+        for line in result.stdout.splitlines():
+            print(line.decode('utf-8'))
+        for line in result.stderr.splitlines():
+            print("Blender script error:", line.decode('utf-8'))
         return output_path
 
 class ImageTextInstructSignatureVector(SignatureVector):
@@ -84,6 +88,6 @@ class ImageTextDataLoader:
 if __name__ == "__main__":
     # Quick test
     dataloader = ImageTextDataLoader()
-    batch = dataloader.get_batch_of_signature_vectors(batch_size=8)
+    batch = dataloader.get_batch_of_signature_vectors(batch_size=2)
     for sv, instruction in batch:
         print(sv.to_path(), instruction)

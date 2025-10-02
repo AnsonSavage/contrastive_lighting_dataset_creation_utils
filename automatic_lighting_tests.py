@@ -5,6 +5,14 @@ import math
 import random
 from mathutils import Vector, Matrix
 
+import sys
+import pathlib
+current_dir = pathlib.Path(__file__).resolve().parent
+if str(current_dir) not in sys.path:
+    sys.path.append(str(current_dir))
+
+from data.image_text_instructions_task import ImageTextInstructSignatureVector
+
 def sample_cone(normal: Vector, theta_max_deg: float) -> Vector:
     theta_max = math.radians(theta_max_deg)
     u = random.random()
@@ -98,11 +106,14 @@ def add_reverse_key_light(cam: bpy.types.Object, obj: bpy.types.Object, light_si
 
 
 
-
-
-
 cam = bpy.data.objects.get('Camera')
 obj = bpy.data.objects.get('Statue')
 
 set_camera_focus_object(cam, obj)
 add_reverse_key_light(cam, obj)
+
+def process_signature_vector(
+    signature_vector: ImageTextInstructSignatureVector
+) -> None:
+    # Set up the scene based on the signature vector
+    pass

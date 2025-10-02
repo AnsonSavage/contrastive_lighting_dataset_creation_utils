@@ -164,4 +164,4 @@ if __name__ == "__main__":
         signature_vector_str = args.serialized_signature_vector
         signature_vector_bytes = base64.b64decode(signature_vector_str.encode('ascii'))
         signature_vector = pickle.loads(signature_vector_bytes)
-        print(signature_vector)
+        log(signature_vector)

@@ -30,7 +30,7 @@ class ImageImageRenderGenerator:
             f'--hdri_path={HDRIData.get_hdri_path_by_name(signature_vector.variant_attributes[0].name, resolution="2k", extension=".exr")}',
             f'--hdri_z_rotation_offset={signature_vector.variant_attributes[0].z_rotation_offset_from_camera}'
         ],
-                                capture_output=True)
+                                capture_output=True, check=True)
 
         for line in result.stdout.splitlines():
             if '[render_manager]' in line.decode('utf-8'):
