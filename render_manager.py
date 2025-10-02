@@ -126,16 +126,29 @@ class ImageTextRenderManager(RenderManager):
         light = bpy.data.lights.get(light_name)
         if light is None:
             raise ValueError(f"Light '{light_name}' not found in the scene.")
+        
+        light.normalize = True  # Ensure the light uses normalized intensity to account for light scale
 
         rng = random.Random(sample_seed)
         # First we'll compute the base intensity, then we'll map that to what it should be after normalizing for distance between focus object
         base_intensity = None
+        low_range = (5, 15)
+        medium_range = (15, 70)
+        high_range = (90, 250)
+
+        def sample_gaussian_in_range(intensity_range):
+            mu = (intensity_range[0] + intensity_range[1]) / 2
+            single_standard_deviation = (intensity_range[1] - intensity_range[0]) / 4 # 95% of values will fall within the range
+            random_gaussian_distributed_value = rng.gauss(mu=mu, sigma=single_standard_deviation)
+            clamped_value = max(intensity_range[0], min(intensity_range[1], random_gaussian_distributed_value))
+            return clamped_value
+
         if intensity == LightIntensity.LOW:
-            base_intensity = rng.uniform(0, 15) 
+            base_intensity = sample_gaussian_in_range(low_range)
         elif intensity == LightIntensity.MEDIUM:
-            base_intensity = rng.uniform(15, 60)
+            base_intensity = sample_gaussian_in_range(medium_range)
         elif intensity == LightIntensity.HIGH:
-            base_intensity = rng.uniform(60, 600)
+            base_intensity = sample_gaussian_in_range(high_range)
         else:
             raise ValueError(f"Unknown LightIntensity value: {intensity}")
         
@@ -145,6 +158,7 @@ class ImageTextRenderManager(RenderManager):
         adjusted_intensity = original_ratio * (distance_from_object ** 2)
 
         light.energy = adjusted_intensity
+        print(f"Set light '{light_name}' intensity to {light.energy} (base: {base_intensity}, distance from object: {distance_from_object})")
         # NOTE: in our experiments, it seemed like rim lights needed to be about 3x as intense to have a similar visual impact
 
 if __name__ == "__main__":

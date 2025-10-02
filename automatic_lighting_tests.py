@@ -4,14 +4,45 @@ import mathutils
 import math
 import random
 from mathutils import Vector, Matrix
+import importlib
 
-import sys
-import pathlib
-current_dir = pathlib.Path(__file__).resolve().parent
-if str(current_dir) not in sys.path:
-    sys.path.append(str(current_dir))
+def hacky_stuff_to_make_environment_work():
+    import sys
+    # Check if we are actually in a Text Editor and a script is open
+    import os
+    # Set environment variables
+    # BLENDER_PATH="/groups/procedural_research/blender-4.5.3-linux-x64/blender"
+    # DATA_PATH="/groups/procedural_research/data/procedural_dataset_generation_data"
+    os.environ['BLENDER_PATH'] = "/groups/procedural_research/blender-4.5.3-linux-x64/blender"
+    os.environ['DATA_PATH'] = "/groups/procedural_research/data/procedural_dataset_generation_data"
+    active_text_block = bpy.context.edit_text
+    if not active_text_block:
+        raise Exception("No active script in the Text Editor. Please run from the Text Editor window.")
 
+    # Get the filepath associated with this text block
+    script_filepath = active_text_block.filepath
+
+    # Check if the script has been saved to disk
+    if not script_filepath:
+        raise Exception("The script is not saved to an external .py file. Please save it first.")
+
+    # Get the directory of the script file
+    # For /path/to/script.py, this will be /path/to
+    script_directory = os.path.dirname(script_filepath)
+
+    # Reload modules
+    if str(script_directory) in sys.path:
+        # Remove it first to avoid duplicates
+        sys.path.remove(str(script_directory))
+    print("Adding current directory to sys.path:", str(script_directory))
+    sys.path.append(str(script_directory))
+    importlib.reload(sys.modules.get('data.image_text_instructions_task'))
+    importlib.reload(sys.modules.get('render_manager'))
+
+hacky_stuff_to_make_environment_work()
 from data.image_text_instructions_task import ImageTextInstructSignatureVector
+from render_manager import ImageTextRenderManager
+from data.signature_vector.light_attribute import HDRIName, KeyLight, FillLight, RimLight, VirtualLight, LightSize, LightDirection, LightIntensity, BlackbodyLightColor
 
 def sample_cone(normal: Vector, theta_max_deg: float) -> Vector:
     theta_max = math.radians(theta_max_deg)
@@ -106,14 +137,58 @@ def add_reverse_key_light(cam: bpy.types.Object, obj: bpy.types.Object, light_si
 
 
 
-cam = bpy.data.objects.get('Camera')
-obj = bpy.data.objects.get('Statue')
+# cam = bpy.data.objects.get('Camera')
+# obj = bpy.data.objects.get('Statue')
 
-set_camera_focus_object(cam, obj)
-add_reverse_key_light(cam, obj)
+# set_camera_focus_object(cam, obj)
+# add_reverse_key_light(cam, obj)
+
+def get_distance_between_objects(obj1: bpy.types.Object, obj2: bpy.types.Object) -> float:
+    return (obj1.location - obj2.location).length
+
+obj = bpy.data.objects.get('light_focus')
 
 def process_signature_vector(
     signature_vector: ImageTextInstructSignatureVector
 ) -> None:
-    # Set up the scene based on the signature vector
-    pass
+    primary_light = signature_vector.variant_attributes[0]
+    primary_light_intensity = primary_light.light_intensity
+    ImageTextRenderManager()._set_light_intensity(
+        light_name='TriLamp-Key',
+        distance_from_object=get_distance_between_objects(bpy.data.objects.get('TriLamp-Key'), obj),
+        intensity=primary_light_intensity,
+        sample_seed=random.randint(0, 1e6)
+    )
+        
+    # fill_light = signature_vector.variant_attributes[1]
+    # rim_light = signature_vector.variant_attributes[2]
+    
+
+text_signature_vector = ImageTextInstructSignatureVector(
+    variant_attributes=(
+        KeyLight(
+            light_size=LightSize.MEDIUM,
+            light_direction=LightDirection.FRONT_RIGHT,
+            light_intensity=LightIntensity.LOW,
+            light_color=BlackbodyLightColor.WARM
+        ),
+        FillLight(
+            light_size=LightSize.MEDIUM,
+            light_direction=LightDirection.FRONT_LEFT,
+            light_intensity=LightIntensity.MEDIUM,
+            light_color=BlackbodyLightColor.COOL
+        ),
+        RimLight(
+            light_size=LightSize.MEDIUM,
+            light_direction=LightDirection.BACK_LEFT,
+            light_intensity=LightIntensity.MEDIUM,
+            light_color=BlackbodyLightColor.NEUTRAL
+        )),
+        invariant_attributes=(
+            None, # TODO: We'll have to pull this in. Also, we're currently setting up the scene beforehand :shrug:
+            None,
+            None
+        )
+    )
+
+process_signature_vector(text_signature_vector)
