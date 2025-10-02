@@ -2,6 +2,7 @@
 
 import pickle
 import math
+import random
 import bpy
 # Add this file's directory to the Python path for imports
 import sys
@@ -9,8 +10,8 @@ import pathlib
 current_dir = pathlib.Path(__file__).resolve().parent
 if str(current_dir) not in sys.path:
     sys.path.append(str(current_dir))
-
 from data.image_text_instructions_task import ImageTextInstructSignatureVector
+from data.signature_vector.light_attribute import LightIntensity
 from camera_spawner import CameraSpawner
 import base64
 from configure_camera_collections import PROCEDURAL_CAMERA_OBJ, LOOK_FROM_VOLUME_OBJ, LOOK_AT_VOLUME_OBJ
@@ -66,7 +67,6 @@ class RenderManager: # TODO: should probably break this into a scene configurati
         # Create texture coordinate node
         tex_coord = bpy.context.scene.world.node_tree.nodes.new(type='ShaderNodeTexCoord')
         
-        
         # Link nodes
         links = bpy.context.scene.world.node_tree.links
         links.new(env_texture.outputs["Color"], background.inputs["Color"])
@@ -74,7 +74,6 @@ class RenderManager: # TODO: should probably break this into a scene configurati
         links.new(mapping.outputs["Vector"], env_texture.inputs["Vector"])
         links.new(tex_coord.outputs['Generated'], mapping.inputs['Vector'])
         
-        # Optional: Set strength of the HDRI (default is 1.0)
         background.inputs["Strength"].default_value = strength
 
 class ImageImageRenderManager(RenderManager):
@@ -123,9 +122,31 @@ class ImageImageRenderManager(RenderManager):
         return output_path
 
 class ImageTextRenderManager(RenderManager):
-    pass
+    def _set_light_intensity(self, light_name: str, distance_from_object: float, intensity: LightIntensity, sample_seed: int) -> None:
+        light = bpy.data.lights.get(light_name)
+        if light is None:
+            raise ValueError(f"Light '{light_name}' not found in the scene.")
 
-# Read in command line arguments including --output_path, --scene_path, --camera_seed, --hdri_path, --hdri_z_rotation_offset
+        rng = random.Random(sample_seed)
+        # First we'll compute the base intensity, then we'll map that to what it should be after normalizing for distance between focus object
+        base_intensity = None
+        if intensity == LightIntensity.LOW:
+            base_intensity = rng.uniform(0, 15) 
+        elif intensity == LightIntensity.MEDIUM:
+            base_intensity = rng.uniform(15, 60)
+        elif intensity == LightIntensity.HIGH:
+            base_intensity = rng.uniform(60, 600)
+        else:
+            raise ValueError(f"Unknown LightIntensity value: {intensity}")
+        
+        # Base intensity values were computed with a 1x1m area light at 2m distance from the focus object. So, to normalize for distance, we can use the inverse square law:
+        original_distance = 2.0
+        original_ratio = base_intensity / (original_distance ** 2)
+        adjusted_intensity = original_ratio * (distance_from_object ** 2)
+
+        light.energy = adjusted_intensity
+        # NOTE: in our experiments, it seemed like rim lights needed to be about 3x as intense to have a similar visual impact
+
 if __name__ == "__main__":
     try:
         dashdash_index = sys.argv.index('--')
