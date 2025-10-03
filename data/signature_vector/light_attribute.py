@@ -123,19 +123,22 @@ class RimLight(VirtualLight):
     pass
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="List folders in an HDRI directory.")
-    parser.add_argument("hdri_directory", type=str, help="Path to the HDRI directory")
-    args = parser.parse_args()
-    hdri_directory = args.hdri_directory
-    for folder in os.listdir(hdri_directory):
-        if not os.path.isdir(os.path.join(hdri_directory, folder)):
-            continue
-        print(folder)
-        json_path = os.path.join(hdri_directory, folder, f"{folder}_asset_metadata.json")
-        categories = json.load(open(json_path))['info']['categories']
-        my_properties = [category_to_enum_map[category] for category in categories if category in category_to_enum_map]
-        # ensure we have all the required enums represented
-        if IndoorOutdoor.INDOOR in [prop for prop in my_properties]:
-            assert required_enums_indoor.issubset(set(type(prop) for prop in my_properties)), f"Missing required enums in {folder}: {required_enums_indoor - set(type(prop) for prop in my_properties)}"
-        else:
-            assert required_enums_outdoor.issubset(set(type(prop) for prop in my_properties)), f"Missing required enums in {folder}: {required_enums_outdoor - set(type(prop) for prop in my_properties)}"
+    # parser = argparse.ArgumentParser(description="List folders in an HDRI directory.")
+    # parser.add_argument("hdri_directory", type=str, help="Path to the HDRI directory")
+    # args = parser.parse_args()
+    # hdri_directory = args.hdri_directory
+    # for folder in os.listdir(hdri_directory):
+    #     if not os.path.isdir(os.path.join(hdri_directory, folder)):
+    #         continue
+    #     print(folder)
+    #     json_path = os.path.join(hdri_directory, folder, f"{folder}_asset_metadata.json")
+    #     categories = json.load(open(json_path))['info']['categories']
+    #     my_properties = [category_to_enum_map[category] for category in categories if category in category_to_enum_map]
+    #     # ensure we have all the required enums represented
+    #     if IndoorOutdoor.INDOOR in [prop for prop in my_properties]:
+    #         assert required_enums_indoor.issubset(set(type(prop) for prop in my_properties)), f"Missing required enums in {folder}: {required_enums_indoor - set(type(prop) for prop in my_properties)}"
+    #     else:
+    #         assert required_enums_outdoor.issubset(set(type(prop) for prop in my_properties)), f"Missing required enums in {folder}: {required_enums_outdoor - set(type(prop) for prop in my_properties)}"
+    # Name test
+    names = [m.name for m in LightDirection]
+    print(names)

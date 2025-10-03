@@ -136,7 +136,6 @@ def add_reverse_key_light(cam: bpy.types.Object, obj: bpy.types.Object, light_si
     constraint.target = obj
 
 
-
 # cam = bpy.data.objects.get('Camera')
 # obj = bpy.data.objects.get('Statue')
 

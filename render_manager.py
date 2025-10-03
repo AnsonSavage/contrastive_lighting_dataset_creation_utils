@@ -5,13 +5,15 @@ import math
 import random
 import bpy
 # Add this file's directory to the Python path for imports
+import mathutils
+from mathutils import Vector, Matrix
 import sys
 import pathlib
 current_dir = pathlib.Path(__file__).resolve().parent
 if str(current_dir) not in sys.path:
     sys.path.append(str(current_dir))
 from data.image_text_instructions_task import ImageTextInstructSignatureVector
-from data.signature_vector.light_attribute import LightIntensity, BlackbodyLightColor
+from data.signature_vector.light_attribute import LightIntensity, BlackbodyLightColor, LightDirection, VirtualLight
 from camera_spawner import CameraSpawner
 import base64
 from configure_camera_collections import PROCEDURAL_CAMERA_OBJ, LOOK_FROM_VOLUME_OBJ, LOOK_AT_VOLUME_OBJ
@@ -122,6 +124,26 @@ class ImageImageRenderManager(RenderManager):
         return output_path
 
 class ImageTextRenderManager(RenderManager):
+    def _sample_cone(normal: Vector, theta_max_deg: float) -> Vector:
+        theta_max = math.radians(theta_max_deg)
+        u = random.random()
+        v = random.random()
+        cos_theta = (1 - u) + u * math.cos(theta_max)
+        sin_theta = math.sqrt(1 - cos_theta * cos_theta)
+        phi = 2 * math.pi * v
+        # Local direction (cone axis is +Z)
+        dir_local = Vector((sin_theta * math.cos(phi), sin_theta * math.sin(phi), cos_theta))
+        # Build orthonormal basis
+        def basis_from_normal(n):
+            n = n.normalized()
+            if abs(n.z) < 0.999:
+                t = n.cross(Vector((0,0,1))).normalized()
+            else:
+                t = n.cross(Vector((0,1,0))).normalized()
+            b = n.cross(t)
+            return Matrix((t, b, n)).transposed()
+        M = basis_from_normal(normal)
+        return (M @ dir_local).normalized()
     def _sample_gaussian_in_range(self, intensity_range, rng: random.Random) -> float:
         mu = (intensity_range[0] + intensity_range[1]) / 2
         single_standard_deviation = (intensity_range[1] - intensity_range[0]) / 4 # 95% of values will fall within the range
@@ -181,6 +203,61 @@ class ImageTextRenderManager(RenderManager):
         light.temperature = kelvin_temp
         print(f"Set light '{light_name}' color temperature to {kelvin_temp}K")
 
+    def _sample_light_location(
+        self,
+        cam: bpy.types.Object,
+        obj: bpy.types.Object,
+        light_name: str,
+        light_direction: LightDirection,
+        distance_from_object: float = 2,
+        camera_left_right_amount: float = 0.8,
+        sample_cone_degrees: float = 15
+    ) -> None:
+        # light_name = ""
+        # if isinstance(light, KeyLight):
+        #     light_name = "Key_Light"
+        # elif isinstance(light, FillLight):
+        #     light_name = "Fill_Light"
+        # elif isinstance(light, RimLight):
+        #     light_name = "Rim_Light"
+        # else:
+        #     raise ValueError(f"Unknown light type: {type(light)}")
+
+        light_direction_name = light_direction.name
+
+        camera_to_object = obj.location - cam.location
+        z_axis = mathutils.Vector((0, 0, 1))
+        camera_to_object_length = camera_to_object.length
+        camera_to_object.normalize()
+        camera_left = z_axis.cross(camera_to_object).normalized()
+        camera_right = -camera_left
+
+        object_to_light_vector = None
+        if 'BACK' in light_direction_name:
+            object_to_light_vector = camera_to_object.reflect(z_axis)
+        elif 'FRONT' in light_direction_name:
+            object_to_light_vector = -camera_to_object
+
+        if 'RIGHT' in light_direction_name:
+            object_to_light_vector += camera_right * camera_left_right_amount
+        elif 'LEFT' in light_direction_name:
+            object_to_light_vector += camera_left * camera_left_right_amount
+
+        object_to_light_vector.normalize()
+        object_to_light_vector += z_axis * 0.5
+
+        light_location = (
+            obj.location +
+            ImageTextRenderManager._sample_cone(object_to_light_vector, sample_cone_degrees) * distance_from_object
+        )
+
+        # Create a new light data block
+        light_object = bpy.data.objects.get(light_name)
+        light_object.location = light_location
+
+        # Point the light at the object using a track to constraint
+        constraint = light_object.constraints.new(type='TRACK_TO')
+        constraint.target = obj
         
 
 if __name__ == "__main__":
@@ -214,7 +291,7 @@ if __name__ == "__main__":
             hdri_z_rotation_offset=args.hdri_z_rotation_offset
         )
         log(f"Render complete: {result_path}")
-    else:
+    elif mode == 'image-text-instruct':
         parser.add_argument('--serialized_signature_vector', type=str, required=True, help='Serialized signature vector in pickle format.')
         args = parser.parse_args(args_after_dashdash)
 
@@ -222,3 +299,5 @@ if __name__ == "__main__":
         signature_vector_bytes = base64.b64decode(signature_vector_str.encode('ascii'))
         signature_vector = pickle.loads(signature_vector_bytes)
         log(signature_vector)
+    else:
+        raise ValueError(f"Unknown mode: {mode}")
