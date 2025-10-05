@@ -1,5 +1,6 @@
 import bpy
 import mathutils
+import sys
 
 import math
 import random
@@ -7,14 +8,16 @@ from mathutils import Vector, Matrix
 import importlib
 
 def hacky_stuff_to_make_environment_work():
-    import sys
+    print("Setting up environment...")
     # Check if we are actually in a Text Editor and a script is open
     import os
     # Set environment variables
-    # BLENDER_PATH="/groups/procedural_research/blender-4.5.3-linux-x64/blender"
-    # DATA_PATH="/groups/procedural_research/data/procedural_dataset_generation_data"
-    os.environ['BLENDER_PATH'] = "/groups/procedural_research/blender-4.5.3-linux-x64/blender"
-    os.environ['DATA_PATH'] = "/groups/procedural_research/data/procedural_dataset_generation_data"
+    # BLENDER_PATH=C:\Users\yaboy\AppData\Local\Microsoft\WindowsApps\blender-launcher.exe
+    # DATA_PATH=C:\Users\yaboy\OneDrive\Documents\BYU\Masters_Thesis\contrastive_lighting_dataset_creation_utils\dummy_data
+    os.environ['BLENDER_PATH'] = r'C:\Users\yaboy\AppData\Local\Microsoft\WindowsApps\blender-launcher.exe'
+    os.environ['DATA_PATH'] = r'C:\Users\yaboy\OneDrive\Documents\BYU\Masters_Thesis\contrastive_lighting_dataset_creation_utils\dummy_data'
+    # os.environ['BLENDER_PATH'] = "/groups/procedural_research/blender-4.5.3-linux-x64/blender"
+    # os.environ['DATA_PATH'] = "/groups/procedural_research/data/procedural_dataset_generation_data"
     active_text_block = bpy.context.edit_text
     if not active_text_block:
         raise Exception("No active script in the Text Editor. Please run from the Text Editor window.")
@@ -36,10 +39,12 @@ def hacky_stuff_to_make_environment_work():
         sys.path.remove(str(script_directory))
     print("Adding current directory to sys.path:", str(script_directory))
     sys.path.append(str(script_directory))
-    importlib.reload(sys.modules.get('data.image_text_instructions_task'))
-    importlib.reload(sys.modules.get('render_manager'))
 
 hacky_stuff_to_make_environment_work()
+import data.image_text_instructions_task
+import render_manager
+importlib.reload(sys.modules.get('data.image_text_instructions_task'))
+importlib.reload(sys.modules.get('render_manager'))
 from data.image_text_instructions_task import ImageTextInstructSignatureVector
 from render_manager import ImageTextRenderManager
 from data.signature_vector.light_attribute import HDRIName, KeyLight, FillLight, RimLight, VirtualLight, LightSize, LightDirection, LightIntensity, BlackbodyLightColor
