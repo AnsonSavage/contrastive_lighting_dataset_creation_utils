@@ -23,28 +23,18 @@ should_log = True
 
 def log(msg: str) -> None:
     if should_log:
-        print(f"[render_manager] {msg}")
+        print(f"[render_manager] {msg}", flush=True)
 
-class RenderManager: # TODO: should probably break this into a scene configuration class and a render manager
-    def _set_render_settings(self, output_path:str, resolution = (384, 384), use_denoising = True, use_denoising_gpu = True, samples = 128) -> None:
-        # Finally, we need to set the output path and render the image
-        scene = bpy.context.scene
-        scene.render.filepath = output_path
-        scene.render.resolution_x = resolution[0]
-        scene.render.resolution_y = resolution[1]
-        scene.render.image_settings.file_format = 'PNG'
-        scene.render.image_settings.color_mode = 'RGB'
-        scene.render.resolution_percentage = 100
-        scene.cycles.use_denoising = use_denoising
-        scene.cycles.denoising_use_gpu = use_denoising_gpu
-        scene.cycles.samples = samples
-
-
-    def _set_hdri(self, hdri_path: str, strength: float = 1.0, rotation_degrees: float = 0.0) -> None:
+class HDRIManager:
+    """Manages HDRI environment texture setup in Blender's World settings."""
+    
+    def set_hdri(self, hdri_path: str, strength: float = 1.0, rotation_degrees: float = 0.0) -> None:
         """
         Set an HDRI environment texture in Blender's World settings.
         
         :param hdri_path: Full path to the HDRI image file
+        :param strength: Strength/intensity of the HDRI lighting
+        :param rotation_degrees: Z-axis rotation offset in degrees
         """
         # Clear existing world nodes
         bpy.context.scene.world.node_tree.nodes.clear()
@@ -78,52 +68,113 @@ class RenderManager: # TODO: should probably break this into a scene configurati
         
         background.inputs["Strength"].default_value = strength
 
-class ImageImageRenderManager(RenderManager):
-    '''
-    Is capable of rendering to disk, given the following:
-        - A render output path
-        - A camera seed
-        - An HDRI name and rotation offset
+class RenderManager:
+    """
+    Core render manager that can render images with configurable settings.
+    Subclasses can override setup_scene() to add custom lighting, camera, etc.
+    """
+    def __init__(self):
+        pass
     
-    '''
-    def render(self,
-                output_path: str,
-            #    scene_path: str,
-                camera_seed: int,
-                hdri_path: str,
-                hdri_z_rotation_offset: float,
-            ) -> str:
-        camera_spawner = CameraSpawner( # TODO: right now, this assumes we're always using the procedural camera setup
+    def setup_scene(self) -> None:
+        """
+        Override this method in subclasses to set up scene-specific elements
+        (camera, lights, etc.) before rendering.
+        """
+        pass
+    
+    def set_render_settings(
+        self,
+        output_path: str,
+        resolution: tuple[int, int] = (384, 384),
+        use_denoising: bool = True,
+        use_denoising_gpu: bool = True,
+        samples: int = 128
+    ) -> None:
+        """Configure render settings for Cycles."""
+        scene = bpy.context.scene
+        scene.render.filepath = output_path
+        scene.render.resolution_x = resolution[0]
+        scene.render.resolution_y = resolution[1]
+        scene.render.image_settings.file_format = 'PNG'
+        scene.render.image_settings.color_mode = 'RGB'
+        scene.render.resolution_percentage = 100
+        scene.cycles.use_denoising = use_denoising
+        scene.cycles.denoising_use_gpu = use_denoising_gpu
+        scene.cycles.samples = samples
+    
+    def render(self, output_path: str, **kwargs) -> str:
+        """
+        Main render entry point. Calls setup_scene(), configures settings, and renders.
+        
+        :param output_path: Where to save the rendered image
+        :param kwargs: Additional parameters passed to setup_scene()
+        :return: Path to the rendered image
+        """
+        self.setup_scene(**kwargs)
+        self.set_render_settings(output_path)
+        bpy.ops.render.render(write_still=True)
+        log(f"Render complete: {output_path}")
+        return output_path
+
+class ImageImageRenderManager(RenderManager):
+    """
+    Renders images using camera seeds and HDRI environments.
+    Suitable for image-to-image tasks.
+    """
+    def __init__(self):
+        super().__init__()
+        self.hdri_manager = HDRIManager()
+
+    def setup_scene(
+        self,
+        camera_seed: int,
+        hdri_path: str,
+        hdri_z_rotation_offset: float,
+        **kwargs
+    ) -> None:
+        """
+        Set up camera and HDRI before rendering.
+        
+        :param camera_seed: Seed for camera randomness
+        :param hdri_path: Path to HDRI file
+        :param hdri_z_rotation_offset: Z rotation offset in degrees
+        """
+        camera_spawner = CameraSpawner(
             look_from_volume_name=LOOK_FROM_VOLUME_OBJ,
             look_at_volume_name=LOOK_AT_VOLUME_OBJ,
             camera_name=PROCEDURAL_CAMERA_OBJ
         )
-        # bpy.ops.wm.open_mainfile(filepath=scene_path) # TODO: IDK why, but this didn't seem to load the scene in time. Okay, yeah, you basically need to set up a callback with @persistent and bpy.app.handlers.load_post
+        
         camera = bpy.data.objects.get(PROCEDURAL_CAMERA_OBJ)
-        camera_z_rotation = math.degrees(camera.rotation_euler.z)
-        log(f"Camera Z rotation before updating seed: {camera_z_rotation} degrees")
+        camera_z_rotation_before = math.degrees(camera.rotation_euler.z)
+        log(f"Camera Z rotation before updating seed: {camera_z_rotation_before} degrees")
+        
         camera_spawner.update(update_seed=camera_seed)
 
-        # Get Camera's Z rotation
+        # Get Camera's Z rotation after update
         camera = bpy.data.objects.get(PROCEDURAL_CAMERA_OBJ)
         assert camera is not None, f"Camera '{PROCEDURAL_CAMERA_OBJ}' not found in the scene."
         assert camera.rotation_mode == 'XYZ', "Camera rotation mode must be 'XYZ' to extract Z rotation."
         camera_z_rotation = math.degrees(camera.rotation_euler.z)
-        log(f"Camera Z rotation: {camera_z_rotation} degrees")
+        log(f"Camera Z rotation after update: {camera_z_rotation} degrees")
+        
         hdri_rotation = (camera_z_rotation + hdri_z_rotation_offset) % 360
-        log(f"HDRI rotation set to: {hdri_rotation} degrees (Camera Z rotation: {camera_z_rotation}, Offset: {hdri_z_rotation_offset})")
+        log(f"HDRI rotation set to: {hdri_rotation} degrees (Camera Z: {camera_z_rotation}, Offset: {hdri_z_rotation_offset})")
 
         # Set the scene active camera
         bpy.context.scene.camera = camera
 
-        # Now that the camera is in place, we need to set the HDRI
-        self._set_hdri(hdri_path, strength=1.0, rotation_degrees=hdri_rotation)
-        self._set_render_settings(output_path, resolution=(384, 384), use_denoising=True, use_denoising_gpu=True, samples=128)
-        bpy.ops.render.render(write_still=True)
-
-        return output_path
+        # Set HDRI
+        self.hdri_manager.set_hdri(hdri_path, strength=1.0, rotation_degrees=hdri_rotation)
 
 class ImageTextRenderManager(RenderManager):
+    """
+    Renders images using virtual lights and signature vectors.
+    Suitable for image-text instruction tasks.
+    """
+    
+    @staticmethod
     def _sample_cone(normal: Vector, theta_max_deg: float) -> Vector:
         theta_max = math.radians(theta_max_deg)
         u = random.random()
@@ -144,12 +195,14 @@ class ImageTextRenderManager(RenderManager):
             return Matrix((t, b, n)).transposed()
         M = basis_from_normal(normal)
         return (M @ dir_local).normalized()
-    def _sample_gaussian_in_range(self, intensity_range, rng: random.Random) -> float:
+    
+    def _sample_gaussian_in_range(self, intensity_range: tuple[float, float], rng: random.Random) -> float:
         mu = (intensity_range[0] + intensity_range[1]) / 2
-        single_standard_deviation = (intensity_range[1] - intensity_range[0]) / 4 # 95% of values will fall within the range
+        single_standard_deviation = (intensity_range[1] - intensity_range[0]) / 4  # 95% of values will fall within the range
         random_gaussian_distributed_value = rng.gauss(mu=mu, sigma=single_standard_deviation)
         clamped_value = max(intensity_range[0], min(intensity_range[1], random_gaussian_distributed_value))
         return clamped_value
+    
     def _sample_light_intensity(self, light_name: str, distance_from_object: float, intensity: LightIntensity, sample_seed: int) -> None:
         light = bpy.data.lights.get(light_name)
         if light is None:
@@ -163,7 +216,6 @@ class ImageTextRenderManager(RenderManager):
         low_range = (5, 15)
         medium_range = (15, 70)
         high_range = (90, 200)
-
 
         if intensity == LightIntensity.LOW:
             base_intensity = self._sample_gaussian_in_range(low_range, rng)
@@ -180,8 +232,7 @@ class ImageTextRenderManager(RenderManager):
         adjusted_intensity = original_ratio * (distance_from_object ** 2)
 
         light.energy = adjusted_intensity
-        print(f"Set light '{light_name}' intensity to {light.energy} (base: {base_intensity}, distance from object: {distance_from_object})")
-        # NOTE: in our experiments, it seemed like rim lights needed to be about 3x as intense to have a similar visual impact
+        log(f"Set light '{light_name}' intensity to {light.energy} (base: {base_intensity}, distance: {distance_from_object})")
     
     def _sample_light_color_blackbody(self, light_name: str, blackbody_color: BlackbodyLightColor, sample_seed: int) -> None:
         rng = random.Random(sample_seed)
@@ -199,9 +250,9 @@ class ImageTextRenderManager(RenderManager):
         else:
             raise ValueError(f"Unknown BlackbodyLightColor value: {blackbody_color}")
         light.use_temperature = True
-        light.color = (1, 1, 1) # Reset tint to white before applying temperature
+        light.color = (1, 1, 1)  # Reset tint to white before applying temperature
         light.temperature = kelvin_temp
-        print(f"Set light '{light_name}' color temperature to {kelvin_temp}K")
+        log(f"Set light '{light_name}' color temperature to {kelvin_temp}K")
 
     def _sample_light_location(
         self,
@@ -213,21 +264,10 @@ class ImageTextRenderManager(RenderManager):
         camera_left_right_amount: float = 0.8,
         sample_cone_degrees: float = 15
     ) -> None:
-        # light_name = ""
-        # if isinstance(light, KeyLight):
-        #     light_name = "Key_Light"
-        # elif isinstance(light, FillLight):
-        #     light_name = "Fill_Light"
-        # elif isinstance(light, RimLight):
-        #     light_name = "Rim_Light"
-        # else:
-        #     raise ValueError(f"Unknown light type: {type(light)}")
-
         light_direction_name = light_direction.name
 
         camera_to_object = obj.location - cam.location
         z_axis = mathutils.Vector((0, 0, 1))
-        camera_to_object_length = camera_to_object.length
         camera_to_object.normalize()
         camera_left = z_axis.cross(camera_to_object).normalized()
         camera_right = -camera_left
@@ -258,7 +298,17 @@ class ImageTextRenderManager(RenderManager):
         # Point the light at the object using a track to constraint
         constraint = light_object.constraints.new(type='TRACK_TO')
         constraint.target = obj
+    
+    def setup_scene(self, signature_vector: ImageTextInstructSignatureVector, **kwargs) -> None:
+        """
+        Set up lights based on the signature vector.
         
+        :param signature_vector: Signature vector defining the lighting setup
+        """
+        log(f"Setting up scene for signature vector: {signature_vector}")
+        # TODO: Implement light setup logic based on signature_vector
+        # This would call _sample_light_location, _sample_light_intensity, _sample_light_color_blackbody, etc.
+        pass
 
 if __name__ == "__main__":
     try:
@@ -271,33 +321,36 @@ if __name__ == "__main__":
         description="Render an image with specified parameters (expects arguments after '--')."
     )
     parser.add_argument('--output_path', type=str, required=True, help='Path to save the rendered image.')
-    # parser.add_argument('--scene_path', type=str, required=True, help='Path to the Blender scene file (.blend).')
-    # mode = 'image-image'  # or 'image-text-instruct'
-    mode = 'image-text-instruct' # TODO: formalize the mode a bit more :)
-    if mode == 'image-image':
+    parser.add_argument('--mode', type=str, choices=['image-image', 'image-text-instruct'], default='image-text-instruct', help='Rendering mode')
+    
+    # Parse mode first to determine which additional args to expect
+    mode_args, remaining = parser.parse_known_args(args_after_dashdash)
+    
+    if mode_args.mode == 'image-image':
         parser.add_argument('--camera_seed', type=int, required=True, help='Seed for the camera randomness.')
         parser.add_argument('--hdri_path', type=str, required=True, help='Path to the HDRI file.')
         parser.add_argument('--hdri_z_rotation_offset', type=float, required=True, help='Z rotation offset for the HDRI in degrees.')
 
-        # Parse only the relevant slice
         args = parser.parse_args(args_after_dashdash)
 
         render_manager = ImageImageRenderManager()
         result_path = render_manager.render(
             output_path=args.output_path,
-            # scene_path=args.scene_path,
             camera_seed=args.camera_seed,
             hdri_path=args.hdri_path,
             hdri_z_rotation_offset=args.hdri_z_rotation_offset
         )
-        log(f"Render complete: {result_path}")
-    elif mode == 'image-text-instruct':
+        
+    elif mode_args.mode == 'image-text-instruct':
         parser.add_argument('--serialized_signature_vector', type=str, required=True, help='Serialized signature vector in pickle format.')
         args = parser.parse_args(args_after_dashdash)
 
         signature_vector_str = args.serialized_signature_vector
         signature_vector_bytes = base64.b64decode(signature_vector_str.encode('ascii'))
         signature_vector = pickle.loads(signature_vector_bytes)
-        log(signature_vector)
-    else:
-        raise ValueError(f"Unknown mode: {mode}")
+        
+        render_manager = ImageTextRenderManager()
+        result_path = render_manager.render(
+            output_path=args.output_path,
+            signature_vector=signature_vector
+        )
