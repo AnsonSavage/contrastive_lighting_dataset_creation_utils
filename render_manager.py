@@ -103,7 +103,7 @@ class RenderManager:
         scene.cycles.denoising_use_gpu = use_denoising_gpu
         scene.cycles.samples = samples
     
-    def render(self, output_path: str, **kwargs) -> str:
+    def render(self, **kwargs) -> str:
         """
         Main render entry point. Calls setup_scene(), configures settings, and renders.
         
@@ -112,10 +112,9 @@ class RenderManager:
         :return: Path to the rendered image
         """
         self.setup_scene(**kwargs)
-        self.set_render_settings(output_path)
         bpy.ops.render.render(write_still=True)
-        log(f"Render complete: {output_path}")
-        return output_path
+        log(f"Render complete: {bpy.context.scene.render.filepath}")
+        return bpy.context.scene.render.filepath
 
 class ImageImageRenderManager(RenderManager):
     """
