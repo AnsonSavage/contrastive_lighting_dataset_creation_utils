@@ -77,6 +77,10 @@ def get_random_point_in_mesh(obj, max_attempts=3000, seed=None):
     max_bound = max_bound + Vector((buffer, buffer, buffer))
 
     # 2. Find a point inside the mesh using ray casting
+    # Get the dependency graph for scene ray casting
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    scene = bpy.context.scene
+    
     for i in range(max_attempts):
         random_point = Vector((
             rng.uniform(min_bound.x, max_bound.x),
@@ -89,8 +93,10 @@ def get_random_point_in_mesh(obj, max_attempts=3000, seed=None):
         current_point = random_point
         
         while True:
-            hit, location, normal, index = obj.ray_cast(current_point, ray_direction)
-            if not hit:
+            # Use scene ray_cast for world space coordinates
+            result, location, normal, index, hit_obj, matrix = scene.ray_cast(depsgraph, current_point, ray_direction)
+            # Only count intersections with the target object
+            if not result or hit_obj != obj:
                 break
             intersections += 1
             current_point = location + ray_direction * 0.0001
