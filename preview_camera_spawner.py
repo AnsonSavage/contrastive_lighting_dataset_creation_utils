@@ -5,48 +5,55 @@ from mathutils import Vector
 from math import inf
 
 # A global dictionary to cache mesh data (e.g., bounding boxes)
-# This maps a bpy.types.Object to its calculated data and assumes the object won't change.
+# This maps a bpy.types.Object to its calculated data.
+# We will clear this cache in the CameraSpawner to handle moving objects.
 mesh_cache = {}
 
-def get_random_point_in_mesh(obj, max_attempts=3000, seed=None):
+def get_random_point_in_mesh(obj, max_attempts=300, seed=None):
     """
-    Finds a random point inside the volume of a given Blender mesh object.
-    Caches bounding box data to speed up repeated calls on the same object.
+    Finds a random point inside the volume of a given Blender mesh object
+    using scene.ray_cast in world space.
 
     Args:
         obj (bpy.types.Object): The mesh object to sample from. It must be a closed, manifold mesh.
-
         max_attempts (int): Maximum number of attempts to find a point.
-        seed (int, optional): If provided, uses a local RNG seeded with this value for deterministic sampling.
+        seed (int, optional): If provided, uses a local RNG seeded with this value.
 
     Returns:
-        mathutils.Vector or None: A Vector representing the location of a random point 
+        mathutils.Vector or None: A Vector (in world space) representing a random point 
                                   inside the mesh, or None if a point could not be found.
     """
-    # Use a local RNG if a seed is provided to avoid mutating global random state
+    # Use a local RNG if a seed is provided
     rng = random if seed is None else random.Random(seed)
     if obj.type != 'MESH' or obj.data is None:
-        print("Error: The provided object is not a valid mesh.")
+        print(f"Error: The provided object '{obj.name}' is not a valid mesh.")
         return None
+
+    # Get the evaluated dependency graph and the current scene
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    scene = bpy.context.scene
 
     min_bound, max_bound = None, None
 
     # 1. Check if the object's bounding box is already in the cache
     if obj in mesh_cache:
         min_bound, max_bound = mesh_cache[obj]
-        print(f"Retrieved bounding box for '{obj.name}' from cache.")
+        # print(f"Retrieved bounding box for '{obj.name}' from cache.")
     else:
-        print(f"Calculating bounding box for '{obj.name}' and caching it.")
-        # Get the dependency graph
-        depsgraph = bpy.context.evaluated_depsgraph_get()
+        # print(f"Calculating bounding box for '{obj.name}' and caching it.")
         
-        # Using to_mesh() and to_mesh_clear() in a try/finally block is the most
-        # robust way to handle temporary mesh data and prevent memory leaks.
         mesh = None
         try:
+            # Get the evaluated mesh from the depsgraph
             mesh = obj.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
             
+            if not mesh.vertices:
+                print(f"Error: Mesh for '{obj.name}' has no vertices after evaluation.")
+                return None
+                
             matrix_world = obj.matrix_world
+            
+            # Calculate world-space bounding box
             temp_min_bound = Vector((inf, inf, inf))
             temp_max_bound = Vector((-inf, -inf, -inf))
 
@@ -68,38 +75,53 @@ def get_random_point_in_mesh(obj, max_attempts=3000, seed=None):
                 obj.to_mesh_clear()
 
     if min_bound is None or max_bound is None:
-        print("Error: Could not determine mesh bounds.")
+        print(f"Error: Could not determine mesh bounds for '{obj.name}'.")
         return None
 
-    # Add a small buffer to the bounding box to avoid surface issues
+    # Add a small buffer to the bounding box
     buffer = 0.0001
     min_bound = min_bound - Vector((buffer, buffer, buffer))
     max_bound = max_bound + Vector((buffer, buffer, buffer))
 
-    # 2. Find a point inside the mesh using ray casting
+    # 2. Find a point inside the mesh using scene.ray_cast (world space)
     for i in range(max_attempts):
+        # Generate a random point in world space
         random_point = Vector((
             rng.uniform(min_bound.x, max_bound.x),
             rng.uniform(min_bound.y, max_bound.y),
             rng.uniform(min_bound.z, max_bound.z)
         ))
 
-        ray_direction = Vector((1, 0, 0))
+        ray_direction = Vector((1, 0, 0)) # World space direction
         intersections = 0
-        current_point = random_point
+        current_point = random_point # World space origin
         
         while True:
-            hit, location, normal, index = obj.ray_cast(current_point, ray_direction)
+            # Use scene.ray_cast, which operates in world space
+            hit, location, normal, index, hit_obj, matrix = scene.ray_cast(
+                depsgraph, 
+                current_point, 
+                ray_direction
+            )
+            
             if not hit:
+                # Ray has exited the scene without hitting anything else
                 break
-            intersections += 1
+                
+            # We only care about intersections with *our* target object
+            if hit_obj == obj:
+                intersections += 1
+                
+            # Advance the ray's origin to just past the last hit point
+            # to avoid self-intersection on the next cast
             current_point = location + ray_direction * 0.0001
 
         if intersections % 2 == 1:
-            print(f"Found a point inside after {i + 1} attempts.")
+            # Odd number of hits with our object means the start was inside
+            print(f"Found a point inside '{obj.name}' after {i + 1} attempts.")
             return random_point
 
-    print(f"Failed to find an interior point after {max_attempts} attempts.")
+    print(f"Failed to find an interior point for '{obj.name}' after {max_attempts} attempts.")
     return None
 
 
@@ -112,23 +134,36 @@ class CameraSpawner:
         self.camera_name = camera_name
 
     def update(self, update_seed, pass_criteria = None):
+        # --- FIX: Clear cache ---
+        # This ensures that if the volumes move, we get their new
+        # bounding boxes instead of using stale, cached ones.
+        mesh_cache.clear()
+        
         assert update_seed is not None, "Seed must be provided."
         # Initialize a deterministic RNG for this update call
         rng = random.Random(update_seed)
         has_good_sample = False
-        max_attempts = 3000
+        max_attempts = 300
         attempts = 0
+        
+        look_at = None
+        look_from = None
+        
         while not has_good_sample and attempts < max_attempts:
             # Generate seeds deterministically from the per-update RNG
             attempts += 1
             look_at_seed = rng.getrandbits(64)
             look_at = get_random_point_in_mesh(self.look_at_volume, seed=look_at_seed)
             if look_at is None:
+                # print("Look at is None")
                 continue
+                
             look_from_seed = rng.getrandbits(64)
             look_from = get_random_point_in_mesh(self.look_from_volume, seed=look_from_seed)
             if look_from is None:
+                # print("Look from is None")
                 continue
+                
             if pass_criteria is not None:
                 has_good_sample = pass_criteria(look_from, look_at)
             else:
@@ -157,29 +192,63 @@ class CameraSpawner:
         Returns:
             mathutils.Matrix: The look-at transformation matrix.
         """
+        # Handle case where camera and target are in the same spot
+        if (camera_position - target_position).length_squared < 0.0001:
+            print("Warning: Camera and target are at the same position.")
+            return mathutils.Matrix.Translation(camera_position)
+
         camera_direction = (target_position - camera_position).normalized()
 
+        # Handle looking straight up or down
         up = mathutils.Vector((0, 0, 1))
-        camera_right = camera_direction.cross(up).normalized()
-        
-        camera_up = camera_right.cross(camera_direction).normalized()
+        if abs(camera_direction.dot(up)) > 0.999:
+            camera_right = mathutils.Vector((1, 0, 0)) # Use X-axis as 'right'
+            camera_up = camera_right.cross(camera_direction).normalized()
+            # Re-calculate right to be truly orthogonal
+            camera_right = camera_direction.cross(camera_up).normalized()
+        else:
+            camera_right = camera_direction.cross(up).normalized()
+            camera_up = camera_right.cross(camera_direction).normalized()
 
-        rotation_transform = mathutils.Matrix([camera_right, camera_up, -camera_direction]).transposed().to_4x4()
+        # Create the 4x4 rotation matrix
+        # Columns are: right, up, -forward
+        rotation_transform = mathutils.Matrix([
+            (*camera_right, 0),
+            (*camera_up, 0),
+            (*-camera_direction, 0),
+            (0, 0, 0, 1)
+        ]).transposed() # Transpose to set rows correctly
 
+        # Create the 4x4 translation matrix
         translation_transform = mathutils.Matrix.Translation(camera_position)
-        print(translation_transform)
+        
         look_at_transform = translation_transform @ rotation_transform
         return look_at_transform
 
 def pass_criteria(look_from, look_at):
-    looking_down = look_at.z < look_from.z
-    looking_straight_down = down = mathutils.Vector((0, 0, -1)).dot((look_at - look_from).normalized()) > 0.9
+    direction = (look_at - look_from).normalized()
+    # Check if Z component of direction is negative (pointing down)
+    looking_down = direction.z < -0.01 # Add a small threshold
+    
+    # Check dot product with the "straight down" vector
+    looking_straight_down = mathutils.Vector((0, 0, -1)).dot(direction) > 0.9
+    
+    # print(f"Looking down: {looking_down} (dir.z: {direction.z:.2f})")
+    # print(f"Looking straight down: {looking_straight_down}")
+    
     return looking_down and not looking_straight_down
 
-camera_spawner = CameraSpawner(
-    look_from_volume_name='look_from_volume',
-    look_at_volume_name='look_at_volume',
-    camera_name='procedural_camera'
-)
+# --- This part runs the script ---
+# (Make sure you have objects named 'look_from_volume', 
+# 'look_at_volume', and 'procedural_camera' in your scene)
+try:
+    camera_spawner = CameraSpawner(
+        look_from_volume_name='look_from_volume',
+        look_at_volume_name='look_at_volume',
+        camera_name='procedural_camera'
+    )
 
-camera_spawner.update(update_seed=random.getrandbits(64), pass_criteria=pass_criteria)
+    camera_spawner.update(update_seed=random.getrandbits(64), pass_criteria=pass_criteria)
+
+except AssertionError as e:
+    print(f"Script setup error: {e}")
