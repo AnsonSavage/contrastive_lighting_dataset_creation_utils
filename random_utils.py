@@ -1,4 +1,5 @@
 import bpy
+import mathutils
 import random
 from mathutils import Vector
 from math import inf
@@ -7,7 +8,7 @@ from math import inf
 # This maps a bpy.types.Object to its calculated data and assumes the object won't change.
 mesh_cache = {}
 
-def get_random_point_in_mesh(obj, max_attempts=3000, seed=None):
+def get_random_point_in_mesh(obj, max_attempts=300, seed=None):
     """
     Finds a random point inside the volume of a given Blender mesh object.
     Caches bounding box data to speed up repeated calls on the same object.
@@ -22,28 +23,35 @@ def get_random_point_in_mesh(obj, max_attempts=3000, seed=None):
         mathutils.Vector or None: A Vector representing the location of a random point 
                                   inside the mesh, or None if a point could not be found.
     """
-    # Use a local RNG if a seed is provided to avoid mutating global random state
+    # Use a local RNG if a seed is provided
     rng = random if seed is None else random.Random(seed)
     if obj.type != 'MESH' or obj.data is None:
         print("Error: The provided object is not a valid mesh.")
         return None
+
+    # --- FIX: Get depsgraph and scene up-front ---
+    # We need the depsgraph for both bounding box and scene.ray_cast
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    scene = bpy.context.scene
 
     min_bound, max_bound = None, None
 
     # 1. Check if the object's bounding box is already in the cache
     if obj in mesh_cache:
         min_bound, max_bound = mesh_cache[obj]
-        print(f"Retrieved bounding box for '{obj.name}' from cache.")
+        # print(f"Retrieved bounding box for '{obj.name}' from cache.")
     else:
-        print(f"Calculating bounding box for '{obj.name}' and caching it.")
-        # Get the dependency graph
-        depsgraph = bpy.context.evaluated_depsgraph_get()
+        # print(f"Calculating bounding box for '{obj.name}' and caching it.")
         
-        # Using to_mesh() and to_mesh_clear() in a try/finally block is the most
-        # robust way to handle temporary mesh data and prevent memory leaks.
+        # Using to_mesh() and to_mesh_clear() is correct
         mesh = None
         try:
+            # Use the depsgraph we already got
             mesh = obj.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
+            
+            if not mesh.vertices:
+                print(f"Error: Mesh for '{obj.name}' has no vertices after evaluation.")
+                return None
             
             matrix_world = obj.matrix_world
             temp_min_bound = Vector((inf, inf, inf))
@@ -58,7 +66,6 @@ def get_random_point_in_mesh(obj, max_attempts=3000, seed=None):
                 temp_max_bound.y = max(temp_max_bound.y, world_co.y)
                 temp_max_bound.z = max(temp_max_bound.z, world_co.z)
             
-            # Store the calculated bounds in the global cache
             mesh_cache[obj] = (temp_min_bound, temp_max_bound)
             min_bound, max_bound = temp_min_bound, temp_max_bound
         
@@ -70,12 +77,12 @@ def get_random_point_in_mesh(obj, max_attempts=3000, seed=None):
         print("Error: Could not determine mesh bounds.")
         return None
 
-    # Add a small buffer to the bounding box to avoid surface issues
+    # Add a small buffer to the bounding box
     buffer = 0.0001
     min_bound = min_bound - Vector((buffer, buffer, buffer))
     max_bound = max_bound + Vector((buffer, buffer, buffer))
 
-    # 2. Find a point inside the mesh using ray casting
+    # 2. Find a point inside the mesh using scene.ray_cast (world space)
     for i in range(max_attempts):
         random_point = Vector((
             rng.uniform(min_bound.x, max_bound.x),
@@ -83,15 +90,27 @@ def get_random_point_in_mesh(obj, max_attempts=3000, seed=None):
             rng.uniform(min_bound.z, max_bound.z)
         ))
 
-        ray_direction = Vector((1, 0, 0))
+        ray_direction = Vector((1, 0, 0)) # World space direction
         intersections = 0
-        current_point = random_point
+        current_point = random_point # World space origin
         
         while True:
-            hit, location, normal, index = obj.ray_cast(current_point, ray_direction)
+            # --- FIX: Use scene.ray_cast ---
+            hit, location, normal, index, hit_obj, matrix = scene.ray_cast(
+                depsgraph, 
+                current_point, 
+                ray_direction
+            )
+            
             if not hit:
+                # Ray has exited the scene without hitting anything else
                 break
-            intersections += 1
+                
+            # We only care about intersections with *our* target object
+            if hit_obj == obj:
+                intersections += 1
+                
+            # Advance the ray's origin to just past the last hit point
             current_point = location + ray_direction * 0.0001
 
         if intersections % 2 == 1:
