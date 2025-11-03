@@ -5,8 +5,6 @@ from mathutils import Vector
 from math import inf
 
 # A global dictionary to cache mesh data (e.g., bounding boxes)
-# This maps a bpy.types.Object to its calculated data.
-# We will clear this cache in the CameraSpawner to handle moving objects.
 mesh_cache = {}
 
 def get_random_point_in_mesh(obj, max_attempts=300, seed=None):
@@ -47,8 +45,9 @@ def get_random_point_in_mesh(obj, max_attempts=300, seed=None):
             # Get the evaluated mesh from the depsgraph
             mesh = obj.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
             
+            # This is the check that likely fails when the object is hidden
             if not mesh.vertices:
-                print(f"Error: Mesh for '{obj.name}' has no vertices after evaluation.")
+                print(f"Error: Mesh for '{obj.name}' has no vertices. Is it hidden?")
                 return None
                 
             matrix_world = obj.matrix_world
@@ -66,7 +65,6 @@ def get_random_point_in_mesh(obj, max_attempts=300, seed=None):
                 temp_max_bound.y = max(temp_max_bound.y, world_co.y)
                 temp_max_bound.z = max(temp_max_bound.z, world_co.z)
             
-            # Store the calculated bounds in the global cache
             mesh_cache[obj] = (temp_min_bound, temp_max_bound)
             min_bound, max_bound = temp_min_bound, temp_max_bound
         
@@ -97,7 +95,6 @@ def get_random_point_in_mesh(obj, max_attempts=300, seed=None):
         current_point = random_point # World space origin
         
         while True:
-            # Use scene.ray_cast, which operates in world space
             hit, location, normal, index, hit_obj, matrix = scene.ray_cast(
                 depsgraph, 
                 current_point, 
@@ -105,19 +102,14 @@ def get_random_point_in_mesh(obj, max_attempts=300, seed=None):
             )
             
             if not hit:
-                # Ray has exited the scene without hitting anything else
                 break
                 
-            # We only care about intersections with *our* target object
             if hit_obj == obj:
                 intersections += 1
                 
-            # Advance the ray's origin to just past the last hit point
-            # to avoid self-intersection on the next cast
             current_point = location + ray_direction * 0.0001
 
         if intersections % 2 == 1:
-            # Odd number of hits with our object means the start was inside
             print(f"Found a point inside '{obj.name}' after {i + 1} attempts.")
             return random_point
 
@@ -134,54 +126,74 @@ class CameraSpawner:
         self.camera_name = camera_name
 
     def update(self, update_seed, pass_criteria = None):
-        # --- FIX: Clear cache ---
-        # This ensures that if the volumes move, we get their new
-        # bounding boxes instead of using stale, cached ones.
         mesh_cache.clear()
         
-        assert update_seed is not None, "Seed must be provided."
-        # Initialize a deterministic RNG for this update call
-        rng = random.Random(update_seed)
-        has_good_sample = False
-        max_attempts = 300
-        attempts = 0
+        # --- NEW: Store original visibility state ---
+        look_at_was_hidden = self.look_at_volume.hide_get()
+        look_from_was_hidden = self.look_from_volume.hide_get()
         
-        look_at = None
-        look_from = None
-        
-        while not has_good_sample and attempts < max_attempts:
-            # Generate seeds deterministically from the per-update RNG
-            attempts += 1
-            look_at_seed = rng.getrandbits(64)
-            look_at = get_random_point_in_mesh(self.look_at_volume, seed=look_at_seed)
-            if look_at is None:
-                # print("Look at is None")
-                continue
-                
-            look_from_seed = rng.getrandbits(64)
-            look_from = get_random_point_in_mesh(self.look_from_volume, seed=look_from_seed)
-            if look_from is None:
-                # print("Look from is None")
-                continue
-                
-            if pass_criteria is not None:
-                has_good_sample = pass_criteria(look_from, look_at)
-            else:
-                has_good_sample = True
+        try:
+            # --- NEW: Temporarily unhide objects ---
+            if look_at_was_hidden:
+                self.look_at_volume.hide_set(False)
+                # print(f"Temporarily unhiding '{self.look_at_volume.name}'")
+            
+            if look_from_was_hidden:
+                self.look_from_volume.hide_set(False)
+                # print(f"Temporarily unhiding '{self.look_from_volume.name}'")
 
-        if not has_good_sample:
-            print(f"Failed to find valid camera positions after {max_attempts} attempts.")
-            return
+            # --- Original Logic ---
+            assert update_seed is not None, "Seed must be provided."
+            rng = random.Random(update_seed)
+            has_good_sample = False
+            max_attempts = 300
+            attempts = 0
+            
+            look_at = None
+            look_from = None
+            
+            while not has_good_sample and attempts < max_attempts:
+                attempts += 1
+                look_at_seed = rng.getrandbits(64)
+                look_at = get_random_point_in_mesh(self.look_at_volume, seed=look_at_seed)
+                if look_at is None:
+                    continue
+                    
+                look_from_seed = rng.getrandbits(64)
+                look_from = get_random_point_in_mesh(self.look_from_volume, seed=look_from_seed)
+                if look_from is None:
+                    continue
+                    
+                if pass_criteria is not None:
+                    has_good_sample = pass_criteria(look_from, look_at)
+                else:
+                    has_good_sample = True
 
-        camera = bpy.data.objects.get(self.camera_name)
-        assert camera is not None, f"Camera '{self.camera_name}' not found in the scene."
-        
-        look_at_matrix = self.compute_look_at_matrix(look_from, look_at)
-        
-        camera.matrix_world = look_at_matrix
-        
-        print(f"Camera '{self.camera_name}' moved to coordinate: {look_from}")
-        print(f"Camera '{self.camera_name}' now looking at: {look_at}")
+            if not has_good_sample:
+                print(f"Failed to find valid camera positions after {max_attempts} attempts.")
+                return
+
+            camera = bpy.data.objects.get(self.camera_name)
+            assert camera is not None, f"Camera '{self.camera_name}' not found in the scene."
+            
+            look_at_matrix = self.compute_look_at_matrix(look_from, look_at)
+            
+            camera.matrix_world = look_at_matrix
+            
+            print(f"Camera '{self.camera_name}' moved to coordinate: {look_from}")
+            print(f"Camera '{self.camera_name}' now looking at: {look_at}")
+
+        finally:
+            # --- NEW: Restore original hidden state ---
+            # This block runs *even if* the code in 'try' fails,
+            # ensuring your scene is left as you found it.
+            if look_at_was_hidden:
+                self.look_at_volume.hide_set(True)
+                # print(f"Restoring hidden state for '{self.look_at_volume.name}'")
+            if look_from_was_hidden:
+                self.look_from_volume.hide_set(True)
+                # print(f"Restoring hidden state for '{self.look_from_volume.name}'")
+
 
     def compute_look_at_matrix(self, camera_position: mathutils.Vector, target_position: mathutils.Vector):
         """
@@ -192,34 +204,28 @@ class CameraSpawner:
         Returns:
             mathutils.Matrix: The look-at transformation matrix.
         """
-        # Handle case where camera and target are in the same spot
         if (camera_position - target_position).length_squared < 0.0001:
             print("Warning: Camera and target are at the same position.")
             return mathutils.Matrix.Translation(camera_position)
 
         camera_direction = (target_position - camera_position).normalized()
 
-        # Handle looking straight up or down
         up = mathutils.Vector((0, 0, 1))
         if abs(camera_direction.dot(up)) > 0.999:
-            camera_right = mathutils.Vector((1, 0, 0)) # Use X-axis as 'right'
+            camera_right = mathutils.Vector((1, 0, 0)) 
             camera_up = camera_right.cross(camera_direction).normalized()
-            # Re-calculate right to be truly orthogonal
             camera_right = camera_direction.cross(camera_up).normalized()
         else:
             camera_right = camera_direction.cross(up).normalized()
             camera_up = camera_right.cross(camera_direction).normalized()
 
-        # Create the 4x4 rotation matrix
-        # Columns are: right, up, -forward
         rotation_transform = mathutils.Matrix([
             (*camera_right, 0),
             (*camera_up, 0),
             (*-camera_direction, 0),
             (0, 0, 0, 1)
-        ]).transposed() # Transpose to set rows correctly
+        ]).transposed() 
 
-        # Create the 4x4 translation matrix
         translation_transform = mathutils.Matrix.Translation(camera_position)
         
         look_at_transform = translation_transform @ rotation_transform
@@ -227,20 +233,11 @@ class CameraSpawner:
 
 def pass_criteria(look_from, look_at):
     direction = (look_at - look_from).normalized()
-    # Check if Z component of direction is negative (pointing down)
-    looking_down = direction.z < -0.01 # Add a small threshold
-    
-    # Check dot product with the "straight down" vector
+    looking_down = direction.z < -0.01 
     looking_straight_down = mathutils.Vector((0, 0, -1)).dot(direction) > 0.9
-    
-    # print(f"Looking down: {looking_down} (dir.z: {direction.z:.2f})")
-    # print(f"Looking straight down: {looking_straight_down}")
-    
     return looking_down and not looking_straight_down
 
 # --- This part runs the script ---
-# (Make sure you have objects named 'look_from_volume', 
-# 'look_at_volume', and 'procedural_camera' in your scene)
 try:
     camera_spawner = CameraSpawner(
         look_from_volume_name='look_from_volume',
