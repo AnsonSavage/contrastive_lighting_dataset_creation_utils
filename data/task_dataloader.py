@@ -24,7 +24,7 @@ but continue with the RNG sequence for the other tasks.
 
 '''
 import random
-from .image_image_task import ImageImageDataLoader
+from data.image_image_task import ImageImageDataLoader
 
 # Make a separate random number generator for each task
 image_text_image_based_rng = random.Random(1)
@@ -44,14 +44,16 @@ image_image_is_free_variant = (True)
 
 # Let's test this now ;)
 if __name__ == "__main__":
+    n_iter = 128
     dataloader = ImageImageDataLoader()
-    sv_batch = dataloader.get_batch_of_signature_vectors(invariant_free_mask=image_image_is_free_invariant, batch_size=4)
-    print("Signature Vectors:")
-    for sv_left, sv_right in sv_batch:
-        print("Left:", sv_left.variant_attributes[0].name, sv_left.variant_attributes[0].z_rotation_offset_from_camera, sv_left.invariant_attributes[0].scene_id, sv_left.invariant_attributes[1].seed)
-        print("Right:", sv_right.variant_attributes[0].name, sv_right.variant_attributes[0].z_rotation_offset_from_camera, sv_right.invariant_attributes[0].scene_id, sv_right.invariant_attributes[1].seed)
-    image_paths = dataloader.get_batch_of_images_given_signature_vectors(sv_batch)
-    print("Image Paths:")
-    for left_path, right_path in image_paths:
-        print("Left Image Path:", left_path)
-        print("Right Image Path:", right_path)
+    for i in range(n_iter):
+        sv_batch = dataloader.get_batch_of_signature_vectors(invariant_free_mask=image_image_is_free_invariant, batch_size=1)
+        print("Signature Vectors:")
+        for sv_left, sv_right in sv_batch:
+            print("Left:", sv_left.variant_attributes[0].name, sv_left.variant_attributes[0].z_rotation_offset_from_camera, sv_left.invariant_attributes[0].scene_id, sv_left.invariant_attributes[1].seed)
+            print("Right:", sv_right.variant_attributes[0].name, sv_right.variant_attributes[0].z_rotation_offset_from_camera, sv_right.invariant_attributes[0].scene_id, sv_right.invariant_attributes[1].seed)
+        image_paths = dataloader.get_batch_of_images_given_signature_vectors(sv_batch)
+        print("Image Paths:")
+        for left_path, right_path in image_paths:
+            print("Left Image Path:", left_path)
+            print("Right Image Path:", right_path)

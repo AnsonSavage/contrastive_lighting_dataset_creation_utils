@@ -21,12 +21,13 @@ class HDRIData:
             return HDRIData.cached_hdri_names
         if not os.path.isdir(HDRI_DIR):
             raise FileNotFoundError(f"HDRI directory not found: {HDRI_DIR}")
+
         # Only include directories (each HDRI is a folder)
         HDRIData.cached_hdri_names.extend([d for d in os.listdir(HDRI_DIR) if os.path.isdir(os.path.join(HDRI_DIR, d))])
         return HDRIData.cached_hdri_names
 
     @staticmethod
-    def get_hdri_path_by_name(name: str, resolution:str = '2k', extension:str = '.exr'):
+    def get_hdri_path_by_name(name: str, resolution:str = '2k', extension:str = '.exr') -> str:
         """Return the path to an HDRI file by its name and resolution.
 
         Expected filename pattern: <name>_<resolution><extension>

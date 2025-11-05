@@ -91,6 +91,10 @@ class HDRIName(LightSourceAttribute):
     name: str
     z_rotation_offset_from_camera: float
 
+    @classmethod
+    def sample_value(cls, rng): # Welp, you definitely overengineered this one... ;)
+        raise NotImplementedError("HDRIName sampling not yet implemented, pass desired name to constructor.")
+
 @dataclass
 class HDRIProperties(LightSourceAttribute):
     """ Properties of the HDRI useful for text description generation """

@@ -1,5 +1,6 @@
 # Assumes that Blender is loaded up with the relevant scene... Although loading the scene here wouldn't be bad.
 
+import os
 import pickle
 import math
 import random
@@ -18,6 +19,7 @@ from camera_spawner import CameraSpawner
 import base64
 from configure_camera_collections import PROCEDURAL_CAMERA_OBJ, LOOK_FROM_VOLUME_OBJ, LOOK_AT_VOLUME_OBJ
 import argparse
+import tempfile
 
 should_log = True
 
@@ -68,28 +70,70 @@ class HDRIManager:
         
         background.inputs["Strength"].default_value = strength
 
+class SceneManager:
+    """Interface for scene setup logic (camera, lights, world, etc.)."""
+
+    def setup_scene(self, *args, **kwargs) -> None:  # noqa: D401 (simple interface)
+        """Set up scene-specific elements before rendering."""
+        raise NotImplementedError("SceneManager.setup_scene() must be implemented by subclasses")
+
+
 class RenderManager:
     """
-    Core render manager that can render images with configurable settings.
-    Subclasses can override setup_scene() to add custom lighting, camera, etc.
+    Core render manager that configures render settings and triggers the render.
+    Compose this with a SceneManager which is responsible for scene setup.
     """
     def __init__(self):
-        pass
-    
-    def setup_scene(self) -> None:
-        """
-        Override this method in subclasses to set up scene-specific elements
-        (camera, lights, etc.) before rendering.
-        """
-        pass
+        self.is_render_settings_configured = False
+
+    @staticmethod
+    def set_gpu():
+        log("Attempting to configure GPU rendering...")
+        try:
+            bpy.context.scene.render.engine = "CYCLES"
+            bpy.context.scene.cycles.device = "GPU"
+
+            prefs = bpy.context.preferences.addons["cycles"].preferences
+
+            # Try to set OPTIX
+            try:
+                prefs.compute_device_type = "OPTIX"
+                prefs.get_devices() # This will error if 'OPTIX' is not a valid type
+            except Exception as e:
+                # If OPTIX fails, fall back to CUDA
+                try:
+                    prefs.compute_device_type = "CUDA"
+                    prefs.get_devices()
+                except Exception as e2:
+                    log(f"Warning: Could not set OPTIX or CUDA: {e2}")
+
+            log(f"Set compute backend to: {prefs.compute_device_type}")
+
+            # Call get_devices() again to populate the list for the chosen backend
+            prefs.get_devices()
+
+            # Enable all devices (GPU and CPU) following your example's structure
+            # This iterates over the `preferences.devices` collection
+            if not prefs.devices:
+                raise Exception("No devices found for the selected backend.")
+
+            log("Enabling devices...")
+            for d in prefs.devices:
+                d.use = True # Set device to be used
+                log(f"Enabled: {d.name}, Type: {d.type}, Use: {d.use}")
+
+        except Exception as e:
+            log(f"Warning: Could not configure GPU rendering preferences: {e}")
+            log("Will attempt to render with default scene settings.")
     
     def set_render_settings(
         self,
-        output_path: str,
+        output_path: str = os.path.join(tempfile.gettempdir(), "render.png"),
         resolution: tuple[int, int] = (384, 384),
         use_denoising: bool = True,
         use_denoising_gpu: bool = True,
-        samples: int = 128
+        samples: int = 128,
+        use_gpu_rendering: bool = True
     ) -> None:
         """Configure render settings for Cycles."""
         scene = bpy.context.scene
@@ -102,27 +146,35 @@ class RenderManager:
         scene.cycles.use_denoising = use_denoising
         scene.cycles.denoising_use_gpu = use_denoising_gpu
         scene.cycles.samples = samples
+        if use_gpu_rendering:
+            RenderManager.set_gpu()
+        self.is_render_settings_configured=True
     
-    def render(self, **kwargs) -> str:
+    def render(self, output_path=None) -> str:
         """
-        Main render entry point. Calls setup_scene(), configures settings, and renders.
+        Main render entry point.
         
-        :param output_path: Where to save the rendered image
-        :param kwargs: Additional parameters passed to setup_scene()
+        :param output_path: Where to save the rendered image (use None to use the previous render settings)
         :return: Path to the rendered image
         """
-        self.setup_scene(**kwargs)
-        bpy.ops.render.render(write_still=True)
-        log(f"Render complete: {bpy.context.scene.render.filepath}")
-        return bpy.context.scene.render.filepath
+        # Scene setup is handled by a SceneManager. We don't assert here to keep responsibilities separated.
+        if not self.is_render_settings_configured:
+            log("Warning: render settings have not been configured")
 
-class ImageImageRenderManager(RenderManager):
+        scene = bpy.context.scene
+        if output_path is not None:
+            scene.render.filepath = output_path
+
+        bpy.ops.render.render(write_still=True)
+        log(f"Render complete: {scene.render.filepath}")
+        return scene.render.filepath
+
+class ImageImageSceneManager(SceneManager):
     """
-    Renders images using camera seeds and HDRI environments.
+    Sets up scenes using camera seeds and HDRI environments.
     Suitable for image-to-image tasks.
     """
     def __init__(self):
-        super().__init__()
         self.hdri_manager = HDRIManager()
 
     def setup_scene(
@@ -130,7 +182,6 @@ class ImageImageRenderManager(RenderManager):
         camera_seed: int,
         hdri_path: str,
         hdri_z_rotation_offset: float,
-        **kwargs
     ) -> None:
         """
         Set up camera and HDRI before rendering.
@@ -167,9 +218,9 @@ class ImageImageRenderManager(RenderManager):
         # Set HDRI
         self.hdri_manager.set_hdri(hdri_path, strength=1.0, rotation_degrees=hdri_rotation)
 
-class ImageTextRenderManager(RenderManager):
+class ImageTextSceneManager(SceneManager):
     """
-    Renders images using virtual lights and signature vectors.
+    Sets up scenes using virtual lights and signature vectors.
     Suitable for image-text instruction tasks.
     """
     
@@ -287,7 +338,7 @@ class ImageTextRenderManager(RenderManager):
 
         light_location = (
             obj.location +
-            ImageTextRenderManager._sample_cone(object_to_light_vector, sample_cone_degrees) * distance_from_object
+            ImageTextSceneManager._sample_cone(object_to_light_vector, sample_cone_degrees) * distance_from_object
         )
 
         # Create a new light data block
@@ -325,6 +376,9 @@ if __name__ == "__main__":
     # Parse mode first to determine which additional args to expect
     mode_args, remaining = parser.parse_known_args(args_after_dashdash)
     
+    render_manager = RenderManager()
+    render_manager.set_render_settings(resolution=(256, 256), samples=64)
+
     if mode_args.mode == 'image-image':
         parser.add_argument('--camera_seed', type=int, required=True, help='Seed for the camera randomness.')
         parser.add_argument('--hdri_path', type=str, required=True, help='Path to the HDRI file.')
@@ -332,13 +386,13 @@ if __name__ == "__main__":
 
         args = parser.parse_args(args_after_dashdash)
 
-        render_manager = ImageImageRenderManager()
-        result_path = render_manager.render(
-            output_path=args.output_path,
+        scene_manager = ImageImageSceneManager()
+        scene_manager.setup_scene(
             camera_seed=args.camera_seed,
             hdri_path=args.hdri_path,
             hdri_z_rotation_offset=args.hdri_z_rotation_offset
         )
+        result_path = render_manager.render(output_path=args.output_path)
         
     elif mode_args.mode == 'image-text-instruct':
         parser.add_argument('--serialized_signature_vector', type=str, required=True, help='Serialized signature vector in pickle format.')
@@ -348,8 +402,6 @@ if __name__ == "__main__":
         signature_vector_bytes = base64.b64decode(signature_vector_str.encode('ascii'))
         signature_vector = pickle.loads(signature_vector_bytes)
         
-        render_manager = ImageTextRenderManager()
-        result_path = render_manager.render(
-            output_path=args.output_path,
-            signature_vector=signature_vector
-        )
+        scene_manager = ImageTextSceneManager()
+        scene_manager.setup_scene(signature_vector=signature_vector)
+        result_path = render_manager.render(output_path=args.output_path)

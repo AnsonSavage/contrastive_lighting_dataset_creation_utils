@@ -17,20 +17,28 @@ class ImageImageRenderGenerator:
 
     def do_render(self, signature_vector: SignatureVector, output_path: str, headless: bool = True) -> str:
         scene_path = OutdoorSceneData().get_scene_path_by_id(signature_vector.invariant_attributes[0].scene_id)
-        result = subprocess.run([
-            self.path_to_blender,
-            scene_path,
-            '--background' if headless else '',
-            '--python', 'render_manager.py',
-            
-            '--', # Begin command line args for the script
-            f'--output_path={output_path}',
-            # f'--scene_path={scene_path}',
-            f'--camera_seed={signature_vector.invariant_attributes[1].seed}',
-            f'--hdri_path={HDRIData.get_hdri_path_by_name(signature_vector.variant_attributes[0].name, resolution="2k", extension=".exr")}',
-            f'--hdri_z_rotation_offset={signature_vector.variant_attributes[0].z_rotation_offset_from_camera}'
-        ],
-                                capture_output=True, check=True)
+        try:
+            result = subprocess.run([
+                self.path_to_blender,
+                scene_path,
+                '--background' if headless else '',
+                '--python', 'render_manager.py',
+                
+                '--', # Begin command line args for the script
+                '--mode=image-image',
+                f'--output_path={output_path}',
+                # f'--scene_path={scene_path}',
+                f'--camera_seed={signature_vector.invariant_attributes[1].seed}',
+                f'--hdri_path={HDRIData.get_hdri_path_by_name(signature_vector.variant_attributes[0].name, resolution="2k", extension=".exr")}',
+                f'--hdri_z_rotation_offset={signature_vector.variant_attributes[0].z_rotation_offset_from_camera}'
+            ],
+            capture_output=True, check=True)
+        except subprocess.CalledProcessError as e:
+            print("Error during Blender rendering:")
+            print(e.stdout.decode('utf-8'))
+            print(e.stderr.decode('utf-8'))
+            raise e
+
 
         for line in result.stdout.splitlines():
             if '[render_manager]' in line.decode('utf-8'):
@@ -72,7 +80,7 @@ class ImageImageDataLoader:
         # For now, we're just going to have one positive pair per batch.
         # TODO: Once you add support for rejection sampling, etc. you can do the same kind of sampling here that you do in the image_text_instructions_task.py file.
 
-        available_scenes = OutdoorSceneData().get_available_outdoor_scene_ids()
+        available_scenes = OutdoorSceneData().get_available_scene_ids()
         available_hdris = HDRIData.get_available_hdris_names()
         print("Available scenes:", available_scenes)
         print("Available HDRIs:", available_hdris)
