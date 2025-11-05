@@ -55,9 +55,8 @@ class ImageImageSignatureVector(SignatureVector):
         base_data_path = os.path.join(DATA_PATH, 'renders')
         path = os.path.join(
             base_data_path,
-            self.invariant_attributes[0].scene_id,
-            self.variant_attributes[0].name,
-            f"camera_{self.invariant_attributes[1].seed}_hdri_offset_{self.variant_attributes[0].z_rotation_offset_from_camera}.png"
+            self.variant_attributes[0].name, # HDRI name
+            f"hdri-offset_{self.variant_attributes[0].z_rotation_offset_from_camera}_camera_{self.invariant_attributes[1].seed}_{self.invariant_attributes[0].scene_id.replace('.blend', '')}.png"
         )
         if not os.path.exists(path):
             ImageImageRenderGenerator().do_render(self, path)
