@@ -201,7 +201,7 @@ def main():  # pragma: no cover
         potential_file = assets_to_request[0]
         if os.path.isfile(potential_file):
             with open(potential_file, "r", encoding="utf-8") as f:
-                lines = [line.strip() for line in f if line.strip()]
+                lines = [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
                 if lines:
                     assets_to_request = lines
                     print(f"Loaded {len(lines)} assets from {potential_file}")
