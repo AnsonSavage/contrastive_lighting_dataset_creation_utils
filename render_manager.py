@@ -148,6 +148,12 @@ class RenderManager:
         scene.cycles.samples = samples
         if use_gpu_rendering:
             RenderManager.set_gpu()
+
+        # Color management settings
+        scene.view_settings.view_transform = 'AgX'
+        scene.view_settings.look = 'None' # You can change this to 'Medium Contrast', etc.
+        scene.view_settings.exposure = 0.0
+        scene.view_settings.gamma = 1.0
         self.is_render_settings_configured=True
     
     def render(self, output_path=None) -> str:

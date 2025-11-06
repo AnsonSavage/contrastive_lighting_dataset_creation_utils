@@ -2,4 +2,6 @@ dummy_data/
 *.pyc
 .env
 .venv/
+venv/
 .vscode/
+contrastive_data/*
