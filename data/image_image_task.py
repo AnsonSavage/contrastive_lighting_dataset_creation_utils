@@ -29,10 +29,7 @@ class ImageImageRenderGenerator:
                 '--', # Begin command line args for the script
                 '--mode=image-image',
                 f'--output_path={output_path}',
-                # f'--scene_path={scene_path}',
-                f'--camera_seed={signature_vector.invariant_attributes[1].seed}',
-                f'--hdri_path={HDRIData.get_hdri_path_by_name(signature_vector.variant_attributes[0].name, resolution="2k", extension=".exr")}',
-                f'--hdri_z_rotation_offset={signature_vector.variant_attributes[0].z_rotation_offset_from_camera}'
+                f'--serialized_signature_vector={base64.b64encode(pickle.dumps(signature_vector)).decode("ascii")}',
             ],
             capture_output=True, check=True)
         except subprocess.CalledProcessError as e:
@@ -65,16 +62,8 @@ class ImageImageRenderGenerator:
             raise ValueError("signature_vectors and output_paths must have the same length")
 
         scene_path = OutdoorSceneData().get_scene_path_by_id(scene_id)
-        tasks = []
-        for sv, outp in zip(signature_vectors, output_paths):
-            tasks.append({
-                'output_path': outp,
-                'camera_seed': sv.invariant_attributes[1].seed,
-                'hdri_path': HDRIData.get_hdri_path_by_name(sv.variant_attributes[0].name, resolution="2k", extension=".exr"),
-                'hdri_z_rotation_offset': sv.variant_attributes[0].z_rotation_offset_from_camera,
-            })
-
-        serialized = base64.b64encode(pickle.dumps(tasks)).decode('ascii')
+        serialized_svs = base64.b64encode(pickle.dumps(signature_vectors)).decode('ascii')
+        serialized_paths = base64.b64encode(pickle.dumps(output_paths)).decode('ascii')
         try:
             result = subprocess.run([
                 self.path_to_blender,
@@ -83,8 +72,8 @@ class ImageImageRenderGenerator:
                 '--python', 'render_manager.py',
                 '--',
                 '--mode=image-image-batch',
-                f'--output_path={output_paths[-1]}',  # not used, but render_manager expects it
-                f'--serialized_tasks={serialized}',
+                f'--serialized_signature_vectors={serialized_svs}',
+                f'--serialized_output_paths={serialized_paths}',
             ], capture_output=True, check=True)
         except subprocess.CalledProcessError as e:
             print("Error during Blender batch rendering:")
@@ -201,8 +190,6 @@ class ImageImageDataLoader:
                 scene_id = sv.invariant_attributes[0].scene_id
                 all_to_render_by_scene.setdefault(scene_id, []).append(sv)
                 all_output_paths_by_scene.setdefault(scene_id, []).append(p)
-        print("This is the all_to_render_by_scene:", all_to_render_by_scene)
-        print("This is the all_output_paths_by_scene:", all_output_paths_by_scene)
 
         # Render per-scene in batches
         renderer = ImageImageRenderGenerator()
@@ -211,6 +198,7 @@ class ImageImageDataLoader:
             # Ensure directories exist
             for outp in outs:
                 os.makedirs(os.path.dirname(outp), exist_ok=True)
+            print(f"Currently rendering all images for scene {scene_id} in batch of size {len(signature_vectors_batch)}")
             renderer.do_render_batch_for_scene(signature_vectors_batch, outs)
 
         # Return paths in original order

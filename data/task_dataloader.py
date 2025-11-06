@@ -49,7 +49,7 @@ if __name__ == "__main__":
     signature_vectors = []
     for i in range(n_iter):
         # sv_batch = dataloader.get_batch_of_signature_vectors(invariant_free_mask=image_image_is_free_invariant, batch_size=1)
-        signature_vectors.extend(dataloader.get_batch_of_signature_vectors(invariant_free_mask=image_image_is_free_invariant, batch_size=1)) # This is a little counterintuitive: The batch size here controls the number of images with the same view and the same scene but with different ligting will show up on the left side and right side of tuples that are returned by this method.
+        signature_vectors.extend(dataloader.get_batch_of_signature_vectors(invariant_free_mask=image_image_is_free_invariant, batch_size=3)) # This is a little counterintuitive: The batch size here controls the number of images with the same view and the same scene but with different ligting will show up on the left side and right side of tuples that are returned by this method.
     print("Signature Vectors:", len(signature_vectors))
     print(type(signature_vectors))
     print("First Signature Vector:", signature_vectors[0])

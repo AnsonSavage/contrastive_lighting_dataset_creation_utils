@@ -14,7 +14,8 @@ current_dir = pathlib.Path(__file__).resolve().parent
 if str(current_dir) not in sys.path:
     sys.path.append(str(current_dir))
 from data.image_text_instructions_task import ImageTextInstructSignatureVector
-from data.signature_vector.light_attribute import LightIntensity, BlackbodyLightColor, LightDirection, VirtualLight
+from data.signature_vector.light_attribute import LightIntensity, BlackbodyLightColor, LightDirection
+from data.signature_vector.data_getters import HDRIData
 from camera_spawner import CameraSpawner
 import base64
 from configure_camera_collections import PROCEDURAL_CAMERA_OBJ, LOOK_FROM_VOLUME_OBJ, LOOK_AT_VOLUME_OBJ
@@ -99,7 +100,7 @@ class RenderManager:
             try:
                 prefs.compute_device_type = "OPTIX"
                 prefs.get_devices() # This will error if 'OPTIX' is not a valid type
-            except Exception as e:
+            except Exception:
                 # If OPTIX fails, fall back to CUDA
                 try:
                     prefs.compute_device_type = "CUDA"
@@ -150,10 +151,8 @@ class RenderManager:
             RenderManager.set_gpu()
 
         # Color management settings
-        # Set defaults explicitly to avoid inheriting from .blend
-        scene.display_settings.display_device = 'sRGB'
         scene.view_settings.view_transform = 'AgX'
-        scene.view_settings.look = 'None'  # default contrast/look
+        scene.view_settings.look = 'None' # You can change this to 'Medium Contrast', etc.
         scene.view_settings.exposure = 0.0
         scene.view_settings.gamma = 1.0
         self.is_render_settings_configured=True
@@ -368,6 +367,90 @@ class ImageTextSceneManager(SceneManager):
         # This would call _sample_light_location, _sample_light_intensity, _sample_light_color_blackbody, etc.
         pass
 
+
+class RenderModeStrategy:
+    def add_args(self, parser: argparse.ArgumentParser) -> None:
+        raise NotImplementedError
+    def run(self, args: argparse.Namespace, render_manager: 'RenderManager') -> None:
+        raise NotImplementedError
+
+
+class ImageImageStrategy(RenderModeStrategy):
+    def add_args(self, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument('--serialized_signature_vector', type=str, required=True, help='Base64-encoded pickle of ImageImageSignatureVector')
+        parser.add_argument('--output_path', type=str, required=True, help='Path to save the rendered image.')
+
+    def run(self, args: argparse.Namespace, render_manager: 'RenderManager') -> None:
+        sig_bytes = base64.b64decode(args.serialized_signature_vector.encode('ascii'))
+        sv = pickle.loads(sig_bytes)
+
+        hdri_name = sv.variant_attributes[0].name
+        hdri_rot = sv.variant_attributes[0].z_rotation_offset_from_camera
+        camera_seed = sv.invariant_attributes[1].seed
+        hdri_path = HDRIData.get_hdri_path_by_name(hdri_name, resolution='2k', extension='.exr')
+
+        scene_manager = ImageImageSceneManager()
+        scene_manager.setup_scene(
+            camera_seed=camera_seed,
+            hdri_path=hdri_path,
+            hdri_z_rotation_offset=hdri_rot
+        )
+        render_manager.render(output_path=args.output_path)
+
+
+class ImageImageBatchStrategy(RenderModeStrategy):
+    def add_args(self, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument('--serialized_signature_vectors', type=str, required=True, help='Base64-encoded pickle of list[ImageImageSignatureVector]')
+        parser.add_argument('--serialized_output_paths', type=str, required=True, help='Base64-encoded pickle of list[str] for output paths')
+
+    def run(self, args: argparse.Namespace, render_manager: 'RenderManager') -> None:
+        sv_list = pickle.loads(base64.b64decode(args.serialized_signature_vectors.encode('ascii')))
+        output_paths = pickle.loads(base64.b64decode(args.serialized_output_paths.encode('ascii')))
+
+        if len(sv_list) != len(output_paths):
+            raise ValueError('serialized_signature_vectors and serialized_output_paths must be same length')
+
+        scene_manager = ImageImageSceneManager()
+        for sv, outp in zip(sv_list, output_paths):
+            hdri_name = sv.variant_attributes[0].name
+            hdri_rot = sv.variant_attributes[0].z_rotation_offset_from_camera
+            camera_seed = sv.invariant_attributes[1].seed
+            hdri_path = HDRIData.get_hdri_path_by_name(hdri_name, resolution='2k', extension='.exr')
+
+            scene_manager.setup_scene(
+                camera_seed=camera_seed,
+                hdri_path=hdri_path,
+                hdri_z_rotation_offset=hdri_rot
+            )
+            render_manager.render(output_path=outp)
+
+
+class ImageTextInstructStrategy(RenderModeStrategy):
+    def add_args(self, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument('--serialized_signature_vector', type=str, required=True, help='Serialized signature vector in pickle format.')
+        parser.add_argument('--output_path', type=str, required=True, help='Path to save the rendered image.')
+
+    def run(self, args: argparse.Namespace, render_manager: 'RenderManager') -> None:
+        signature_vector_str = args.serialized_signature_vector
+        signature_vector_bytes = base64.b64decode(signature_vector_str.encode('ascii'))
+        signature_vector = pickle.loads(signature_vector_bytes)
+        
+        scene_manager = ImageTextSceneManager()
+        scene_manager.setup_scene(signature_vector=signature_vector)
+        render_manager.render(output_path=args.output_path)
+
+
+def get_strategy(mode: str) -> RenderModeStrategy:
+    mapping = {
+        'image-image': ImageImageStrategy(),
+        'image-image-batch': ImageImageBatchStrategy(),
+        'image-text-instruct': ImageTextInstructStrategy(),
+    }
+    if mode not in mapping:
+        raise ValueError(f"Unknown mode: {mode}")
+    return mapping[mode]
+
+
 if __name__ == "__main__":
     try:
         dashdash_index = sys.argv.index('--')
@@ -375,59 +458,18 @@ if __name__ == "__main__":
     except ValueError:
         args_after_dashdash = sys.argv[1:]  # No '--' present
 
-    parser = argparse.ArgumentParser(
-        description="Render an image with specified parameters (expects arguments after '--')."
-    )
-    parser.add_argument('--output_path', type=str, required=True, help='Path to save the rendered image.')
-    parser.add_argument('--mode', type=str, choices=['image-image', 'image-image-batch', 'image-text-instruct'], default='image-text-instruct', help='Rendering mode')
-    
-    # Parse mode first to determine which additional args to expect
-    mode_args, remaining = parser.parse_known_args(args_after_dashdash)
-    
+    base = argparse.ArgumentParser(description="Render entrypoint (expects arguments after '--').")
+    base.add_argument('--mode', type=str, choices=['image-image', 'image-image-batch', 'image-text-instruct'], default='image-text-instruct', help='Rendering mode')
+    print("These are the args after dashdash:", args_after_dashdash)
+    mode_args, _ = base.parse_known_args(args_after_dashdash)
+    print("Selected mode:", mode_args.mode)
+
+    strategy = get_strategy(mode_args.mode)
+    parser = argparse.ArgumentParser(description=f"Render mode: {mode_args.mode}")
+    strategy.add_args(parser)
+    args_after_dashdash = [arg for arg in args_after_dashdash if not arg.startswith('--mode')]
+    args = parser.parse_args(args_after_dashdash)
+
     render_manager = RenderManager()
     render_manager.set_render_settings(resolution=(256, 256), samples=64)
-
-    if mode_args.mode == 'image-image':
-        parser.add_argument('--camera_seed', type=int, required=True, help='Seed for the camera randomness.')
-        parser.add_argument('--hdri_path', type=str, required=True, help='Path to the HDRI file.')
-        parser.add_argument('--hdri_z_rotation_offset', type=float, required=True, help='Z rotation offset for the HDRI in degrees.')
-
-        args = parser.parse_args(args_after_dashdash)
-
-        scene_manager = ImageImageSceneManager()
-        scene_manager.setup_scene(
-            camera_seed=args.camera_seed,
-            hdri_path=args.hdri_path,
-            hdri_z_rotation_offset=args.hdri_z_rotation_offset
-        )
-        result_path = render_manager.render(output_path=args.output_path)
-    elif mode_args.mode == 'image-image-batch':
-        # Expect a base64-encoded pickle list of task dicts with keys:
-        # output_path, camera_seed, hdri_path, hdri_z_rotation_offset
-        parser.add_argument('--serialized_tasks', type=str, required=True, help='Serialized list of render tasks (pickle, then base64).')
-        args = parser.parse_args(args_after_dashdash)
-
-        tasks_bytes = base64.b64decode(args.serialized_tasks.encode('ascii'))
-        tasks = pickle.loads(tasks_bytes)
-
-        scene_manager = ImageImageSceneManager()
-        for t in tasks:
-            scene_manager.setup_scene(
-                camera_seed=int(t['camera_seed']),
-                hdri_path=str(t['hdri_path']),
-                hdri_z_rotation_offset=float(t['hdri_z_rotation_offset'])
-            )
-            render_manager.render(output_path=str(t['output_path']))
-        result_path = args.output_path  # not meaningful in batch, but keep variable defined
-        
-    elif mode_args.mode == 'image-text-instruct':
-        parser.add_argument('--serialized_signature_vector', type=str, required=True, help='Serialized signature vector in pickle format.')
-        args = parser.parse_args(args_after_dashdash)
-
-        signature_vector_str = args.serialized_signature_vector
-        signature_vector_bytes = base64.b64decode(signature_vector_str.encode('ascii'))
-        signature_vector = pickle.loads(signature_vector_bytes)
-        
-        scene_manager = ImageTextSceneManager()
-        scene_manager.setup_scene(signature_vector=signature_vector)
-        result_path = render_manager.render(output_path=args.output_path)
+    strategy.run(args, render_manager)
