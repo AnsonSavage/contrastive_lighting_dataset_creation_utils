@@ -150,8 +150,10 @@ class RenderManager:
             RenderManager.set_gpu()
 
         # Color management settings
+        # Set defaults explicitly to avoid inheriting from .blend
+        scene.display_settings.display_device = 'sRGB'
         scene.view_settings.view_transform = 'AgX'
-        scene.view_settings.look = 'None' # You can change this to 'Medium Contrast', etc.
+        scene.view_settings.look = 'None'  # default contrast/look
         scene.view_settings.exposure = 0.0
         scene.view_settings.gamma = 1.0
         self.is_render_settings_configured=True
@@ -377,7 +379,7 @@ if __name__ == "__main__":
         description="Render an image with specified parameters (expects arguments after '--')."
     )
     parser.add_argument('--output_path', type=str, required=True, help='Path to save the rendered image.')
-    parser.add_argument('--mode', type=str, choices=['image-image', 'image-text-instruct'], default='image-text-instruct', help='Rendering mode')
+    parser.add_argument('--mode', type=str, choices=['image-image', 'image-image-batch', 'image-text-instruct'], default='image-text-instruct', help='Rendering mode')
     
     # Parse mode first to determine which additional args to expect
     mode_args, remaining = parser.parse_known_args(args_after_dashdash)
@@ -399,6 +401,24 @@ if __name__ == "__main__":
             hdri_z_rotation_offset=args.hdri_z_rotation_offset
         )
         result_path = render_manager.render(output_path=args.output_path)
+    elif mode_args.mode == 'image-image-batch':
+        # Expect a base64-encoded pickle list of task dicts with keys:
+        # output_path, camera_seed, hdri_path, hdri_z_rotation_offset
+        parser.add_argument('--serialized_tasks', type=str, required=True, help='Serialized list of render tasks (pickle, then base64).')
+        args = parser.parse_args(args_after_dashdash)
+
+        tasks_bytes = base64.b64decode(args.serialized_tasks.encode('ascii'))
+        tasks = pickle.loads(tasks_bytes)
+
+        scene_manager = ImageImageSceneManager()
+        for t in tasks:
+            scene_manager.setup_scene(
+                camera_seed=int(t['camera_seed']),
+                hdri_path=str(t['hdri_path']),
+                hdri_z_rotation_offset=float(t['hdri_z_rotation_offset'])
+            )
+            render_manager.render(output_path=str(t['output_path']))
+        result_path = args.output_path  # not meaningful in batch, but keep variable defined
         
     elif mode_args.mode == 'image-text-instruct':
         parser.add_argument('--serialized_signature_vector', type=str, required=True, help='Serialized signature vector in pickle format.')

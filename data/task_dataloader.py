@@ -38,22 +38,25 @@ task = 0 # let's just fix the task to 0 for now for simplicity.
 
 # Alright, I'm just kinda free coding because I'm not exactly sure what this will look like yet., we'll figure it out as we go :)
 
-image_image_is_free_invariant = (False, False)
+image_image_is_free_invariant = (False, False) # TODO: this is horrible design, you should have a better way of specifying which attributes are free vs constrained
 image_image_is_free_variant = (True)
 
 
 # Let's test this now ;)
 if __name__ == "__main__":
-    n_iter = 128
+    n_iter = 5
     dataloader = ImageImageDataLoader()
+    signature_vectors = []
     for i in range(n_iter):
-        sv_batch = dataloader.get_batch_of_signature_vectors(invariant_free_mask=image_image_is_free_invariant, batch_size=1)
-        print("Signature Vectors:")
-        for sv_left, sv_right in sv_batch:
-            print("Left:", sv_left.variant_attributes[0].name, sv_left.variant_attributes[0].z_rotation_offset_from_camera, sv_left.invariant_attributes[0].scene_id, sv_left.invariant_attributes[1].seed)
-            print("Right:", sv_right.variant_attributes[0].name, sv_right.variant_attributes[0].z_rotation_offset_from_camera, sv_right.invariant_attributes[0].scene_id, sv_right.invariant_attributes[1].seed)
-        image_paths = dataloader.get_batch_of_images_given_signature_vectors(sv_batch)
-        print("Image Paths:")
-        for left_path, right_path in image_paths:
-            print("Left Image Path:", left_path)
-            print("Right Image Path:", right_path)
+        # sv_batch = dataloader.get_batch_of_signature_vectors(invariant_free_mask=image_image_is_free_invariant, batch_size=1)
+        signature_vectors.extend(dataloader.get_batch_of_signature_vectors(invariant_free_mask=image_image_is_free_invariant, batch_size=1)) # This is a little counterintuitive: The batch size here controls the number of images with the same view and the same scene but with different ligting will show up on the left side and right side of tuples that are returned by this method.
+    print("Signature Vectors:", len(signature_vectors))
+    print(type(signature_vectors))
+    print("First Signature Vector:", signature_vectors[0])
+    print("Type of first Signature Vector:", type(signature_vectors[0]))
+    # for batch in signature_vectors:
+    #     for sv in batch:
+    #         print(sv)
+    #         print("Left:", sv.variant_attributes[0].name, sv.variant_attributes[0].z_rotation_offset_from_camera, sv.invariant_attributes[0].scene_id, sv.invariant_attributes[1].seed)
+    #         print("Right:", sv.variant_attributes[0].name, sv.variant_attributes[0].z_rotation_offset_from_camera, sv.invariant_attributes[0].scene_id, sv.invariant_attributes[1].seed)
+    image_paths = dataloader.get_batch_of_images_given_signature_vectors(signature_vectors)

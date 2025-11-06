@@ -1,5 +1,7 @@
 import os
 import random
+import base64
+import pickle
 from environment import BLENDER_PATH, DATA_PATH
 from .signature_vector.signature_vector import SignatureVector
 from .signature_vector.light_attribute import HDRIName
@@ -47,6 +49,56 @@ class ImageImageRenderGenerator:
             print("Blender script errors: ", result.stderr)
         return output_path
 
+    def do_render_batch_for_scene(self, signature_vectors: list[SignatureVector], output_paths: list[str], headless: bool = True) -> list[str]:
+        """Render multiple images for the same scene in a single Blender process.
+
+        All signature_vectors must share the same scene_id.
+        """
+        if not signature_vectors:
+            return []
+        scene_id = signature_vectors[0].invariant_attributes[0].scene_id
+        # Validate all are same scene
+        for sv in signature_vectors:
+            if sv.invariant_attributes[0].scene_id != scene_id:
+                raise ValueError("All signature vectors in batch must have the same scene_id")
+        if len(signature_vectors) != len(output_paths):
+            raise ValueError("signature_vectors and output_paths must have the same length")
+
+        scene_path = OutdoorSceneData().get_scene_path_by_id(scene_id)
+        tasks = []
+        for sv, outp in zip(signature_vectors, output_paths):
+            tasks.append({
+                'output_path': outp,
+                'camera_seed': sv.invariant_attributes[1].seed,
+                'hdri_path': HDRIData.get_hdri_path_by_name(sv.variant_attributes[0].name, resolution="2k", extension=".exr"),
+                'hdri_z_rotation_offset': sv.variant_attributes[0].z_rotation_offset_from_camera,
+            })
+
+        serialized = base64.b64encode(pickle.dumps(tasks)).decode('ascii')
+        try:
+            result = subprocess.run([
+                self.path_to_blender,
+                scene_path,
+                '--background' if headless else '',
+                '--python', 'render_manager.py',
+                '--',
+                '--mode=image-image-batch',
+                f'--output_path={output_paths[-1]}',  # not used, but render_manager expects it
+                f'--serialized_tasks={serialized}',
+            ], capture_output=True, check=True)
+        except subprocess.CalledProcessError as e:
+            print("Error during Blender batch rendering:")
+            print(e.stdout.decode('utf-8'))
+            print(e.stderr.decode('utf-8'))
+            raise e
+
+        for line in result.stdout.splitlines():
+            if '[render_manager]' in line.decode('utf-8'):
+                print(line.decode('utf-8'))
+        if result.stderr:
+            print("Blender script errors: ", result.stderr)
+        return output_paths
+
 class ImageImageSignatureVector(SignatureVector):
     def __init__(self, variant_attributes: tuple[HDRIName], invariant_attributes: tuple[SceneID, CameraSeed]):
         super().__init__(variant_attributes, invariant_attributes)
@@ -81,8 +133,8 @@ class ImageImageDataLoader:
 
         available_scenes = OutdoorSceneData().get_available_scene_ids()
         available_hdris = HDRIData.get_available_hdris_names()
-        print("Available scenes:", available_scenes)
-        print("Available HDRIs:", available_hdris)
+        # print("Available scenes:", available_scenes)
+        # print("Available HDRIs:", available_hdris)
         selection_of_hdris = image_image_rng.sample(available_hdris, k=batch_size)
         rotations = [image_image_rng.randint(0, 360) for _ in range(batch_size)]
         selected_scene_left = image_image_rng.choice(available_scenes)
@@ -119,9 +171,47 @@ class ImageImageDataLoader:
 
 
     def get_batch_of_images_given_signature_vectors(self, signature_vectors: list[tuple[ImageImageSignatureVector, ImageImageSignatureVector]]) -> list[tuple[str, str]]:
-        image_paths = []
+        """Resolve images for a batch, rendering missing ones.
+
+        Optimization: group by scene_id and render all images for a scene in one Blender run.
+        """
+        # Helper to compute path (without rendering)
+        def compute_path(sv: ImageImageSignatureVector) -> str:
+            base_data_path = os.path.join(DATA_PATH, 'renders')
+            return os.path.join(
+                base_data_path,
+                sv.variant_attributes[0].name,
+                f"hdri-offset_{sv.variant_attributes[0].z_rotation_offset_from_camera}_camera_{sv.invariant_attributes[1].seed}_{sv.invariant_attributes[0].scene_id.replace('.blend', '')}.png"
+            )
+
+        # Build lists and find which are missing
+        left_paths, right_paths = [], []
+        all_to_render_by_scene: dict[str, list[ImageImageSignatureVector]] = {}
+        all_output_paths_by_scene: dict[str, list[str]] = {}
+
         for sv_left, sv_right in signature_vectors:
-            left_image_path = sv_left.to_path()
-            right_image_path = sv_right.to_path()
-            image_paths.append((left_image_path, right_image_path))
-        return image_paths
+            lp = compute_path(sv_left)
+            rp = compute_path(sv_right)
+            left_paths.append(lp)
+            right_paths.append(rp)
+
+            for sv, p in ((sv_left, lp), (sv_right, rp)):
+                if os.path.exists(p):
+                    continue
+                scene_id = sv.invariant_attributes[0].scene_id
+                all_to_render_by_scene.setdefault(scene_id, []).append(sv)
+                all_output_paths_by_scene.setdefault(scene_id, []).append(p)
+        print("This is the all_to_render_by_scene:", all_to_render_by_scene)
+        print("This is the all_output_paths_by_scene:", all_output_paths_by_scene)
+
+        # Render per-scene in batches
+        renderer = ImageImageRenderGenerator()
+        for scene_id, signature_vectors_batch in all_to_render_by_scene.items():
+            outs = all_output_paths_by_scene[scene_id]
+            # Ensure directories exist
+            for outp in outs:
+                os.makedirs(os.path.dirname(outp), exist_ok=True)
+            renderer.do_render_batch_for_scene(signature_vectors_batch, outs)
+
+        # Return paths in original order
+        return list(zip(left_paths, right_paths))
