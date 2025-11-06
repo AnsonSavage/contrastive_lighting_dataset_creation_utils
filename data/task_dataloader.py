@@ -25,6 +25,8 @@ but continue with the RNG sequence for the other tasks.
 '''
 import random
 from data.image_image_task import ImageImageDataLoader
+import argparse
+from concurrent_tasks_helper import choose_shard
 
 # Make a separate random number generator for each task
 image_text_image_based_rng = random.Random(1)
@@ -44,12 +46,22 @@ image_image_is_free_variant = (True)
 
 # Let's test this now ;)
 if __name__ == "__main__":
-    n_iter = 5
+
+    # Read in shard-index and shard-count from the command line    
+    parser = argparse.ArgumentParser(description="DataLoader test script with sharding.")
+    parser.add_argument('--shard-index', type=int, default=0, help='Index of the current shard (0-based).')
+    parser.add_argument('--shard-count', type=int, default=1, help='Total number of shards.')
+    parser.add_argument('--num-iter', type=int, default=256, help='Total number of iterations.')
+    parser.add_argument('--batch-size', type=int, default=8, help='Number of images to render with the same content but different lighting.')
+    args = parser.parse_args()
+    shard_index, shard_count = choose_shard(args)
+
+    n_iter = args.num_iter
     dataloader = ImageImageDataLoader()
     signature_vectors = []
     for i in range(n_iter):
         # sv_batch = dataloader.get_batch_of_signature_vectors(invariant_free_mask=image_image_is_free_invariant, batch_size=1)
-        signature_vectors.extend(dataloader.get_batch_of_signature_vectors(invariant_free_mask=image_image_is_free_invariant, batch_size=3)) # This is a little counterintuitive: The batch size here controls the number of images with the same view and the same scene but with different ligting will show up on the left side and right side of tuples that are returned by this method.
+        signature_vectors.extend(dataloader.get_batch_of_signature_vectors(invariant_free_mask=image_image_is_free_invariant, batch_size=args.batch_size)) # This is a little counterintuitive: The batch size here controls the number of images with the same view and the same scene but with different ligting will show up on the left side and right side of tuples that are returned by this method.
     print("Signature Vectors:", len(signature_vectors))
     print(type(signature_vectors))
     print("First Signature Vector:", signature_vectors[0])
@@ -59,4 +71,4 @@ if __name__ == "__main__":
     #         print(sv)
     #         print("Left:", sv.variant_attributes[0].name, sv.variant_attributes[0].z_rotation_offset_from_camera, sv.invariant_attributes[0].scene_id, sv.invariant_attributes[1].seed)
     #         print("Right:", sv.variant_attributes[0].name, sv.variant_attributes[0].z_rotation_offset_from_camera, sv.invariant_attributes[0].scene_id, sv.invariant_attributes[1].seed)
-    image_paths = dataloader.get_batch_of_images_given_signature_vectors(signature_vectors)
+    image_paths = dataloader.get_batch_of_images_given_signature_vectors(signature_vectors, shard_index=shard_index, shard_count=shard_count)

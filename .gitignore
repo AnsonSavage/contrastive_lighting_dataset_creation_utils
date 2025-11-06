@@ -5,3 +5,4 @@ dummy_data/
 venv/
 .vscode/
 contrastive_data/*
+*.out

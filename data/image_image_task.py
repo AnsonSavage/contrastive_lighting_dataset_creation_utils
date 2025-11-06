@@ -8,6 +8,7 @@ from .signature_vector.light_attribute import HDRIName
 from .signature_vector.invariant_attributes import SceneID, CameraSeed
 from .signature_vector.data_getters import HDRIData, OutdoorSceneData
 import subprocess
+from concurrent_tasks_helper import ConcurrentTasksHelper
 
 # TODO: We'll need to do some thinking for how to organize all of these classes better :)
 
@@ -159,7 +160,7 @@ class ImageImageDataLoader:
         return batch
 
 
-    def get_batch_of_images_given_signature_vectors(self, signature_vectors: list[tuple[ImageImageSignatureVector, ImageImageSignatureVector]]) -> list[tuple[str, str]]:
+    def get_batch_of_images_given_signature_vectors(self, signature_vectors: list[tuple[ImageImageSignatureVector, ImageImageSignatureVector]], shard_index=0, shard_count=1) -> list[tuple[str, str]]:
         """Resolve images for a batch, rendering missing ones.
 
         Optimization: group by scene_id and render all images for a scene in one Blender run.
@@ -178,14 +179,16 @@ class ImageImageDataLoader:
         all_to_render_by_scene: dict[str, list[ImageImageSignatureVector]] = {}
         all_output_paths_by_scene: dict[str, list[str]] = {}
 
+        # completed_renders = []
         for sv_left, sv_right in signature_vectors:
-            lp = compute_path(sv_left)
-            rp = compute_path(sv_right)
-            left_paths.append(lp)
-            right_paths.append(rp)
+            left_path = compute_path(sv_left)
+            right_path = compute_path(sv_right)
+            left_paths.append(left_path)
+            right_paths.append(right_path)
 
-            for sv, p in ((sv_left, lp), (sv_right, rp)):
+            for sv, p in ((sv_left, left_path), (sv_right, right_path)):
                 if os.path.exists(p):
+                    # completed_renders.append(p)
                     continue
                 scene_id = sv.invariant_attributes[0].scene_id
                 all_to_render_by_scene.setdefault(scene_id, []).append(sv)
@@ -193,13 +196,16 @@ class ImageImageDataLoader:
 
         # Render per-scene in batches
         renderer = ImageImageRenderGenerator()
-        for scene_id, signature_vectors_batch in all_to_render_by_scene.items():
+        scene_ids = sorted(all_to_render_by_scene.keys())
+        concurrent_helper = ConcurrentTasksHelper(shard_index, shard_count, scene_ids, already_completed_tasks=set())
+        while scene_id := concurrent_helper.get_next_task():
+            all_signature_vectors_for_given_scene = all_to_render_by_scene[scene_id]
             outs = all_output_paths_by_scene[scene_id]
             # Ensure directories exist
             for outp in outs:
                 os.makedirs(os.path.dirname(outp), exist_ok=True)
-            print(f"Currently rendering all images for scene {scene_id} in batch of size {len(signature_vectors_batch)}")
-            renderer.do_render_batch_for_scene(signature_vectors_batch, outs)
+            print(f"Currently rendering all images for scene {scene_id} in batch of size {len(all_signature_vectors_for_given_scene)}")
+            renderer.do_render_batch_for_scene(all_signature_vectors_for_given_scene, outs)
 
         # Return paths in original order
         return list(zip(left_paths, right_paths))

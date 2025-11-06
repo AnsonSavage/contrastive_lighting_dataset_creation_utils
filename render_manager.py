@@ -35,7 +35,7 @@ def main() -> None:
     args = parser.parse_args(args_after_dashdash)
 
     render_manager = RenderManager()
-    render_manager.set_render_settings(resolution=(256, 256), samples=64)
+    render_manager.set_render_settings(resolution=(512, 512), samples=64)
     strategy.run(args, render_manager)
 
 
