@@ -30,9 +30,9 @@ else
 	NORM_INDEX=0
 fi
 
-echo "Running shard $NORM_INDEX of $SHARD_COUNT" >&2
+echo "Running shard $(($NORM_INDEX+1)) of $SHARD_COUNT" >&2
 
 cd ~/masters_thesis/contrastive_lighting_dataset_creation_utils
-set-a
-source "$(dirname "$0")/.env"
+export BLENDER_PATH="/home/ansonsav/blender/blender-4.5.4-linux-x64/blender"
+export DATA_PATH="/home/ansonsav/masters_thesis/contrastive_lighting_dataset_creation_utils/contrastive_data"
 venv/bin/python3 -m data.task_dataloader --shard-index "$NORM_INDEX" --shard-count "$SHARD_COUNT"

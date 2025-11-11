@@ -12,14 +12,14 @@ from concurrent_tasks_helper import ConcurrentTasksHelper
 
 # TODO: We'll need to do some thinking for how to organize all of these classes better :)
 
-image_image_rng = random.Random(0)
+image_image_rng = random.Random(1)
 
 class ImageImageRenderGenerator:
     def __init__(self):
         self.path_to_blender = BLENDER_PATH
 
-    def do_render(self, signature_vector: SignatureVector, output_path: str, headless: bool = True) -> str:
-        scene_path = OutdoorSceneData().get_scene_path_by_id(signature_vector.invariant_attributes[0].scene_id)
+    def do_render(self, signature_vector: 'ImageImageSignatureVector', output_path: str, headless: bool = True) -> str:
+        scene_path = OutdoorSceneData().get_scene_path_by_id(signature_vector.get_scene_id())
         try:
             result = subprocess.run([
                 self.path_to_blender,
@@ -31,6 +31,7 @@ class ImageImageRenderGenerator:
                 '--mode=image-image',
                 f'--output_path={output_path}',
                 f'--serialized_signature_vector={base64.b64encode(pickle.dumps(signature_vector)).decode("ascii")}',
+                '--aovs', 'metallic', 'albedo', 'roughness',
             ],
             capture_output=True, check=True)
         except subprocess.CalledProcessError as e:
@@ -39,25 +40,25 @@ class ImageImageRenderGenerator:
             print(e.stderr.decode('utf-8'))
             raise e
 
-
         for line in result.stdout.splitlines():
             if '[render_manager]' in line.decode('utf-8'):
                 print(line.decode('utf-8'))
         if result.stderr:
             print("Blender script errors: ", result.stderr)
+
         return output_path
 
-    def do_render_batch_for_scene(self, signature_vectors: list[SignatureVector], output_paths: list[str], headless: bool = True) -> list[str]:
+    def do_render_batch_for_scene(self, signature_vectors: list['ImageImageSignatureVector'], output_paths: list[str], headless: bool = True) -> list[str]:
         """Render multiple images for the same scene in a single Blender process.
 
         All signature_vectors must share the same scene_id.
         """
         if not signature_vectors:
             return []
-        scene_id = signature_vectors[0].invariant_attributes[0].scene_id
+        scene_id = signature_vectors[0].get_scene_id()
         # Validate all are same scene
         for sv in signature_vectors:
-            if sv.invariant_attributes[0].scene_id != scene_id:
+            if sv.get_scene_id() != scene_id:
                 raise ValueError("All signature vectors in batch must have the same scene_id")
         if len(signature_vectors) != len(output_paths):
             raise ValueError("signature_vectors and output_paths must have the same length")
@@ -75,6 +76,7 @@ class ImageImageRenderGenerator:
                 '--mode=image-image-batch',
                 f'--serialized_signature_vectors={serialized_svs}',
                 f'--serialized_output_paths={serialized_paths}',
+                '--aovs', 'metallic', 'albedo', 'roughness',
             ], capture_output=True, check=True)
         except subprocess.CalledProcessError as e:
             print("Error during Blender batch rendering:")
@@ -97,12 +99,21 @@ class ImageImageSignatureVector(SignatureVector):
         base_data_path = os.path.join(DATA_PATH, 'renders')
         path = os.path.join(
             base_data_path,
-            self.variant_attributes[0].name, # HDRI name
-            f"hdri-offset_{self.variant_attributes[0].z_rotation_offset_from_camera}_camera_{self.invariant_attributes[1].seed}_{self.invariant_attributes[0].scene_id.replace('.blend', '')}.png"
+            self.get_hdri_name(),
+            f"hdri-offset_{self.get_hdri_rotation()}_camera_{self.get_camera_seed()}_{self.get_scene_id()}.png"
         )
         if not os.path.exists(path):
             ImageImageRenderGenerator().do_render(self, path)
         return path
+    
+    def get_hdri_name(self) -> str:
+        return self.variant_attributes[0].name
+    def get_camera_seed(self) -> int:
+        return self.invariant_attributes[1].seed
+    def get_scene_id(self) -> str:
+        return self.invariant_attributes[0].scene_id.replace('.blend', '')
+    def get_hdri_rotation(self) -> int:
+        return self.variant_attributes[0].z_rotation_offset_from_camera
 
 class ImageImageDataLoader:
     def get_batch_of_signature_vectors(self, invariant_free_mask, batch_size:int = None) -> list[tuple[ImageImageSignatureVector, ImageImageSignatureVector]]: # normally would also include a variant free mask, but this is true trivially in this case.
@@ -123,8 +134,6 @@ class ImageImageDataLoader:
 
         available_scenes = OutdoorSceneData().get_available_scene_ids()
         available_hdris = HDRIData.get_available_hdris_names()
-        # print("Available scenes:", available_scenes)
-        # print("Available HDRIs:", available_hdris)
         selection_of_hdris = image_image_rng.sample(available_hdris, k=batch_size)
         rotations = [image_image_rng.randint(0, 360) for _ in range(batch_size)]
         selected_scene_left = image_image_rng.choice(available_scenes)
@@ -170,8 +179,8 @@ class ImageImageDataLoader:
             base_data_path = os.path.join(DATA_PATH, 'renders')
             return os.path.join(
                 base_data_path,
-                sv.variant_attributes[0].name,
-                f"hdri-offset_{sv.variant_attributes[0].z_rotation_offset_from_camera}_camera_{sv.invariant_attributes[1].seed}_{sv.invariant_attributes[0].scene_id.replace('.blend', '')}.png"
+                sv.get_hdri_name(),
+                f"hdri-offset_{sv.get_hdri_rotation()}_camera_{sv.get_camera_seed()}_{sv.get_scene_id()}.png"
             )
 
         # Build lists and find which are missing
@@ -190,7 +199,7 @@ class ImageImageDataLoader:
                 if os.path.exists(p):
                     # completed_renders.append(p)
                     continue
-                scene_id = sv.invariant_attributes[0].scene_id
+                scene_id = sv.get_scene_id()
                 all_to_render_by_scene.setdefault(scene_id, []).append(sv)
                 all_output_paths_by_scene.setdefault(scene_id, []).append(p)
 

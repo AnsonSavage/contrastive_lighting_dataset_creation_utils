@@ -31,6 +31,10 @@ def main() -> None:
     strategy = get_strategy(mode_args.mode)
     parser = argparse.ArgumentParser(description=f"Render mode: {mode_args.mode}")
     strategy.add_args(parser)
+    # Allow callers to request a list of AOVs (Arbitrary Output Variables) to be ensured
+    # during the render. Default includes metallic, albedo and roughness as requested.
+    parser.add_argument('--aovs', nargs='+', default=['metallic', 'albedo', 'roughness'],
+                        help='List of AOVs to ensure are rendered (e.g. metallic albedo roughness)')
     args_after_dashdash = [arg for arg in args_after_dashdash if not arg.startswith('--mode=')]
     args = parser.parse_args(args_after_dashdash)
 

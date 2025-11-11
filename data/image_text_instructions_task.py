@@ -27,6 +27,8 @@ class ImageTextInstructRenderGenerator:
             '--',  # Arguments after this are passed to the script
             '--output_path', output_path,
             '--serialized_signature_vector', serialized_sv
+            ,
+            '--aovs', 'metallic', 'albedo', 'roughness'
         ]
         # print("Running command:", ' '.join(cmd))  # For debugging purposes
         result = subprocess.run(cmd, capture_output=True, check=True)

@@ -60,6 +60,8 @@ class SceneData:
 
     def get_scene_path_by_id(self, scene_id: str):
         scene_path = os.path.join(self.path_prefix, scene_id)
+        if not scene_id.endswith('.blend'):
+            scene_path += '.blend'
         if not os.path.exists(scene_path):
             raise ValueError(f"Scene path {scene_path} does not exist (SCENES_DIR={self.path_prefix})")
         return scene_path

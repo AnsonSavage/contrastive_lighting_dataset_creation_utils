@@ -1,6 +1,7 @@
 import os
 import tempfile
 import bpy
+from aov_manager import configure_aovs
 
 from .log import log
 
@@ -87,6 +88,16 @@ class RenderManager:
             pass
         self.is_render_settings_configured=True
     
+    def set_aovs(self, aov_names: list[str], output_directory: str) -> None:
+        """
+        Configure Arbitrary Output Variables (AOVs) to be rendered.
+        
+        :param aov_names: List of AOV names to configure (e.g. 'metallic', 'albedo', 'roughness')
+        :param output_directory: Directory where AOV outputs will be saved
+        """
+        configure_aovs(aov_names, output_directory)
+
+
     def render(self, output_path=None) -> str:
         """
         Main render entry point.
