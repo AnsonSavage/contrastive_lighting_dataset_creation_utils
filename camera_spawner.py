@@ -1,7 +1,7 @@
 import bpy
 import mathutils
 import random
-from preview_camera_spawner import get_random_point_in_mesh, mesh_cache
+from random_utils import get_random_point_in_mesh
 
 
 class CameraSpawner:
@@ -13,7 +13,6 @@ class CameraSpawner:
         self.camera_name = camera_name
 
     def update(self, update_seed, pass_criteria = None):
-        mesh_cache.clear()
         look_at_was_hidden = self.look_at_volume.hide_get()
         look_from_was_hidden = self.look_from_volume.hide_get()
         try:

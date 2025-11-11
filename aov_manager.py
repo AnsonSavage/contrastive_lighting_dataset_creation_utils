@@ -182,6 +182,10 @@ class AOVNodeManager:
         file_output_node = node_tree.nodes.new("CompositorNodeOutputFile")
         file_output_node.base_path = output_path
         file_output_node.location = (400, 0)
+        file_output_node.format.color_management = 'OVERRIDE'
+        file_output_node.format.color_mode = 'RGB'
+        file_output_node.format.view_settings.view_transform = 'Standard'
+
         node_tree.links.new(file_output_node.inputs[0], input_socket)
         return file_output_node
 
@@ -210,7 +214,7 @@ class AOVManager(ABC):
         self.log(f"Shader AOV '{self.pass_name}' ready.")
     
     def _get_output_path(self) -> str:
-        return os.path.join(self.output_directory, self._get_output_name())
+        return os.path.join(self.output_directory, f"{self._get_output_name().lower()}.png")
     
     @abstractmethod
     def _configure_for_aov(self):
@@ -310,10 +314,3 @@ def configure_aovs(input_names: list[str], output_directory: str) -> None:
     for name in input_names:
         builder = get_aov_manager_factory(name, output_directory)
         builder.apply()
-
-def main():
-    builder = get_aov_manager_factory("roughness", output_directory="//aov_outputs/")
-    builder.apply()
-
-if __name__ == "__main__":
-    main()
