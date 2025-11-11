@@ -1,7 +1,8 @@
 import bpy
 import mathutils
 import random
-from random_utils import get_random_point_in_mesh
+from preview_camera_spawner import get_random_point_in_mesh, mesh_cache
+
 
 class CameraSpawner:
     def __init__(self, look_from_volume_name, look_at_volume_name, camera_name):
@@ -12,61 +13,76 @@ class CameraSpawner:
         self.camera_name = camera_name
 
     def update(self, update_seed, pass_criteria = None):
-        assert update_seed is not None, "Seed must be provided."
-        # Initialize a deterministic RNG for this update call
-        rng = random.Random(update_seed)
-        has_good_sample = False
-        max_attempts = 3000
-        attempts = 0
-        while not has_good_sample and attempts < max_attempts:
-            # Generate seeds deterministically from the per-update RNG
-            attempts += 1
-            look_at_seed = rng.getrandbits(64)
-            look_at = get_random_point_in_mesh(self.look_at_volume, seed=look_at_seed)
-            if look_at is None:
-                continue
-            look_from_seed = rng.getrandbits(64)
-            look_from = get_random_point_in_mesh(self.look_from_volume, seed=look_from_seed)
-            if look_from is None:
-                continue
-            if pass_criteria is not None:
-                has_good_sample = pass_criteria(look_from, look_at)
-            else:
-                has_good_sample = True
+        mesh_cache.clear()
+        look_at_was_hidden = self.look_at_volume.hide_get()
+        look_from_was_hidden = self.look_from_volume.hide_get()
+        try:
+            if look_at_was_hidden:
+                self.look_at_volume.hide_set(False)
+            if look_from_was_hidden:
+                self.look_from_volume.hide_set(False)
 
-        if not has_good_sample:
-            print(f"Failed to find valid camera positions after {max_attempts} attempts.")
-            return
+            assert update_seed is not None, "Seed must be provided."
+            rng = random.Random(update_seed)
+            has_good_sample = False
+            max_attempts = 300
+            attempts = 0
+            look_at = None
+            look_from = None
+            while not has_good_sample and attempts < max_attempts:
+                attempts += 1
+                look_at_seed = rng.getrandbits(64)
+                look_at = get_random_point_in_mesh(self.look_at_volume, seed=look_at_seed)
+                if look_at is None:
+                    continue
+                look_from_seed = rng.getrandbits(64)
+                look_from = get_random_point_in_mesh(self.look_from_volume, seed=look_from_seed)
+                if look_from is None:
+                    continue
+                if pass_criteria is not None:
+                    has_good_sample = pass_criteria(look_from, look_at)
+                else:
+                    has_good_sample = True
 
-        camera = bpy.data.objects.get(self.camera_name)
-        assert camera is not None, f"Camera '{self.camera_name}' not found in the scene."
-        
-        look_at_matrix = self.compute_look_at_matrix(look_from, look_at)
-        
-        camera.matrix_world = look_at_matrix
-        
-        print(f"Camera '{self.camera_name}' moved to coordinate: {look_from}")
-        print(f"Camera '{self.camera_name}' now looking at: {look_at}")
+            if not has_good_sample:
+                print(f"Failed to find valid camera positions after {max_attempts} attempts.")
+                return
+
+            camera = bpy.data.objects.get(self.camera_name)
+            assert camera is not None, f"Camera '{self.camera_name}' not found in the scene."
+
+            look_at_matrix = self.compute_look_at_matrix(look_from, look_at)
+            camera.matrix_world = look_at_matrix
+            print(f"Camera '{self.camera_name}' moved to coordinate: {look_from}")
+            print(f"Camera '{self.camera_name}' now looking at: {look_at}")
+        finally:
+            if look_at_was_hidden:
+                self.look_at_volume.hide_set(True)
+            if look_from_was_hidden:
+                self.look_from_volume.hide_set(True)
 
     def compute_look_at_matrix(self, camera_position: mathutils.Vector, target_position: mathutils.Vector):
-        """
-        Computes a look-at transformation matrix for a camera.
-        Args:
-            camera_position (mathutils.Vector): The position of the camera.
-            target_position (mathutils.Vector): The position the camera is looking at.
-        Returns:
-            mathutils.Matrix: The look-at transformation matrix.
-        """
+        if (camera_position - target_position).length_squared < 0.0001:
+            print("Warning: Camera and target are at the same position.")
+            return mathutils.Matrix.Translation(camera_position)
+
         camera_direction = (target_position - camera_position).normalized()
-
         up = mathutils.Vector((0, 0, 1))
-        camera_right = camera_direction.cross(up).normalized()
-        
-        camera_up = camera_right.cross(camera_direction).normalized()
+        if abs(camera_direction.dot(up)) > 0.999:
+            camera_right = mathutils.Vector((1, 0, 0))
+            camera_up = camera_right.cross(camera_direction).normalized()
+            camera_right = camera_direction.cross(camera_up).normalized()
+        else:
+            camera_right = camera_direction.cross(up).normalized()
+            camera_up = camera_right.cross(camera_direction).normalized()
 
-        rotation_transform = mathutils.Matrix([camera_right, camera_up, -camera_direction]).transposed().to_4x4()
+        rotation_transform = mathutils.Matrix([
+            (*camera_right, 0),
+            (*camera_up, 0),
+            (*-camera_direction, 0),
+            (0, 0, 0, 1)
+        ]).transposed()
 
         translation_transform = mathutils.Matrix.Translation(camera_position)
-        print(translation_transform)
         look_at_transform = translation_transform @ rotation_transform
         return look_at_transform

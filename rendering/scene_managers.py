@@ -51,8 +51,14 @@ class ImageImageSceneManager(SceneManager):
         camera = bpy.data.objects.get(PROCEDURAL_CAMERA_OBJ)
         camera_z_rotation_before = math.degrees(camera.rotation_euler.z)
         log(f"Camera Z rotation before updating seed: {camera_z_rotation_before} degrees")
+
+        def pass_criteria(look_from, look_at):
+            direction = (look_at - look_from).normalized()
+            looking_down = direction.z < -0.01
+            looking_straight_down = mathutils.Vector((0, 0, -1)).dot(direction) > 0.9
+            return looking_down and not looking_straight_down
         
-        camera_spawner.update(update_seed=camera_seed)
+        camera_spawner.update(update_seed=camera_seed, pass_criteria=pass_criteria)
 
         # Get Camera's Z rotation after update
         camera = bpy.data.objects.get(PROCEDURAL_CAMERA_OBJ)
@@ -69,6 +75,7 @@ class ImageImageSceneManager(SceneManager):
 
         # Set HDRI
         self.hdri_manager.set_hdri(hdri_path, strength=1.0, rotation_degrees=hdri_rotation)
+
 
 
 class ImageTextSceneManager(SceneManager):
