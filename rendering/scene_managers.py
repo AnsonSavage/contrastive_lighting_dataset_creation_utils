@@ -54,9 +54,9 @@ class ImageImageSceneManager(SceneManager):
 
         def pass_criteria(look_from, look_at):
             direction = (look_at - look_from).normalized()
-            looking_down = direction.z < -0.01
-            looking_straight_down = mathutils.Vector((0, 0, -1)).dot(direction) > 0.9
-            return looking_down and not looking_straight_down
+            not_looking_up = direction.z < 0.0
+            looking_straight_down = mathutils.Vector((0, 0, -1)).dot(direction) > 0.6
+            return not_looking_up and not looking_straight_down
         
         camera_spawner.update(update_seed=camera_seed, pass_criteria=pass_criteria)
 
