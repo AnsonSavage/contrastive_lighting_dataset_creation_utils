@@ -63,6 +63,7 @@ class RenderManager:
         samples: int = 128,
         use_gpu_rendering: bool = True,
         bypass_compositing_nodes: bool = False,
+        set_color_management_defaults: bool = True
     ) -> None:
         """Configure render settings for Cycles."""
         scene = bpy.context.scene
@@ -75,22 +76,22 @@ class RenderManager:
         scene.cycles.use_denoising = use_denoising
         scene.cycles.denoising_use_gpu = use_denoising_gpu
         scene.cycles.samples = samples
+
         scene.cycles.use_persistent_data = True
+        scene.render.use_border = False
+
         if use_gpu_rendering:
             RenderManager.set_gpu()
 
         # Color management settings (AgX + defaults)
-        scene.display_settings.display_device = 'sRGB'
-        scene.view_settings.view_transform = 'AgX'
-        scene.view_settings.look = 'None'  # default contrast/look
-        scene.view_settings.exposure = 0.0
-        scene.view_settings.gamma = 1.0
-        try:
-            scene.sequencer_colorspace_settings.name = 'sRGB'
-        except Exception:
-            pass
+        if set_color_management_defaults:
+            scene.display_settings.display_device = 'sRGB'
+            scene.view_settings.view_transform = 'AgX'
+            scene.view_settings.look = 'None'  # default contrast/look
+            scene.view_settings.exposure = 0.0
+            scene.view_settings.gamma = 1.0
 
-        self.bypass_compositing_nodes = bypass_compositing_nodes
+        self.bypass_compositing_nodes = bypass_compositing_nodes # stores this value for later use in render() so that aovs can be configured first
         self.is_render_settings_configured=True
     
     def set_aovs(self, aov_names: list[str], output_directory: str) -> None:
