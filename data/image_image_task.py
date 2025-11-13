@@ -12,7 +12,7 @@ from concurrent_tasks_helper import ConcurrentTasksHelper
 
 # TODO: We'll need to do some thinking for how to organize all of these classes better :)
 
-image_image_rng = random.Random(1)
+image_image_rng = random.Random(2)
 
 class ImageImageRenderGenerator:
     def __init__(self):
@@ -21,6 +21,7 @@ class ImageImageRenderGenerator:
     def do_render(self, signature_vector: 'ImageImageSignatureVector', output_path: str, headless: bool = True) -> str:
         scene_path = OutdoorSceneData().get_scene_path_by_id(signature_vector.get_scene_id())
         try:
+            print("Rendering image to", output_path, flush=True)
             result = subprocess.run([
                 self.path_to_blender,
                 scene_path,
@@ -35,16 +36,16 @@ class ImageImageRenderGenerator:
             ],
             capture_output=True, check=True)
         except subprocess.CalledProcessError as e:
-            print("Error during Blender rendering:")
-            print(e.stdout.decode('utf-8'))
-            print(e.stderr.decode('utf-8'))
+            print("Error during Blender rendering:", flush=True)
+            print(e.stdout.decode('utf-8'), flush=True)
+            print(e.stderr.decode('utf-8'), flush=True)
             raise e
 
         for line in result.stdout.splitlines():
             if '[render_manager]' in line.decode('utf-8'):
                 print(line.decode('utf-8'))
         if result.stderr:
-            print("Blender script errors: ", result.stderr)
+            print("Blender script errors: ", result.stderr, flush=True)
 
         return output_path
 
@@ -205,16 +206,40 @@ class ImageImageDataLoader:
 
         # Render per-scene in batches
         renderer = ImageImageRenderGenerator()
-        scene_ids = sorted(all_to_render_by_scene.keys())
-        concurrent_helper = ConcurrentTasksHelper(shard_index, shard_count, scene_ids, already_completed_tasks=set())
-        while scene_id := concurrent_helper.get_next_task():
-            all_signature_vectors_for_given_scene = all_to_render_by_scene[scene_id]
-            outs = all_output_paths_by_scene[scene_id]
-            # Ensure directories exist
-            for outp in outs:
-                os.makedirs(os.path.dirname(outp), exist_ok=True)
-            print(f"Currently rendering all images for scene {scene_id} in batch of size {len(all_signature_vectors_for_given_scene)}")
-            renderer.do_render_batch_for_scene(all_signature_vectors_for_given_scene, outs)
+        task_method = 'split_by_scene'
+        
+        if task_method == 'split_by_scene': # This one tends to be more efficient when many images from one scene will be rendered, that way a blender file with one scene can be loaded and multiple renders can be saved from it.
+            scene_ids = sorted(all_to_render_by_scene.keys())
+            concurrent_helper = ConcurrentTasksHelper(shard_index, shard_count, scene_ids, already_completed_tasks=set())
+            while scene_id := concurrent_helper.get_next_task():
+                all_signature_vectors_for_given_scene = all_to_render_by_scene[scene_id]
+                outs = all_output_paths_by_scene[scene_id]
+                # Ensure directories exist
+                for outp in outs:
+                    os.makedirs(os.path.dirname(outp), exist_ok=True)
+                print(f"Currently rendering all images for scene {scene_id} in batch of size {len(all_signature_vectors_for_given_scene)}")
+                renderer.do_render_batch_for_scene(all_signature_vectors_for_given_scene, outs)
+        
+        elif task_method == 'individual':
+            all_signature_vectors = []
+            all_output_paths = []
+            for scene_id in all_to_render_by_scene:
+                all_signature_vectors.extend(all_to_render_by_scene[scene_id])
+                all_output_paths.extend(all_output_paths_by_scene[scene_id])
+            already_completed_tasks = set([p for p in all_output_paths if os.path.exists(p)])
+            print(len(already_completed_tasks), "renders already completed out of", len(all_output_paths), flush=True)
+            concurrent_helper = ConcurrentTasksHelper(shard_index, shard_count, all_output_paths, already_completed_tasks=already_completed_tasks)
+            while output_path := concurrent_helper.get_next_task():
+                print("Next output path to render:", output_path, flush=True)
+                idx = all_output_paths.index(output_path)
+                sv = all_signature_vectors[idx]
+                # Ensure directory exists
+                os.makedirs(os.path.dirname(output_path), exist_ok=True)
+                print(f"Rendering individual image {output_path}")
+                renderer.do_render(sv, output_path)
+        
+        else:
+            raise ValueError(f"Unknown task method {task_method}")
 
         # Return paths in original order
         return list(zip(left_paths, right_paths))
