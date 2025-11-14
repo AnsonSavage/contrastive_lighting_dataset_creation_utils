@@ -57,7 +57,8 @@ if __name__ == "__main__":
     shard_index, shard_count = choose_shard(args)
 
     n_iter = args.num_iter
-    dataloader = ImageImageDataLoader()
+    image_image_rng = random.Random(2)
+    dataloader = ImageImageDataLoader(image_image_rng)
     signature_vectors = []
     for i in range(n_iter):
         # sv_batch = dataloader.get_batch_of_signature_vectors(invariant_free_mask=image_image_is_free_invariant, batch_size=1)
@@ -67,4 +68,4 @@ if __name__ == "__main__":
     #         print(sv)
     #         print("Left:", sv.variant_attributes[0].name, sv.variant_attributes[0].z_rotation_offset_from_camera, sv.invariant_attributes[0].scene_id, sv.invariant_attributes[1].seed)
     #         print("Right:", sv.variant_attributes[0].name, sv.variant_attributes[0].z_rotation_offset_from_camera, sv.invariant_attributes[0].scene_id, sv.invariant_attributes[1].seed)
-    image_paths = dataloader.get_batch_of_images_given_signature_vectors(signature_vectors, shard_index=shard_index, shard_count=shard_count)
+    image_paths = dataloader.get_batch_of_images_given_signature_vectors(signature_vectors, shard_index=shard_index, shard_count=shard_count, task_method='individual')

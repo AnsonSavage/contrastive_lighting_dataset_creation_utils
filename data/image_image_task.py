@@ -12,8 +12,6 @@ from .temp_payload import temporary_payload_file
 
 # TODO: We'll need to do some thinking for how to organize all of these classes better :)
 
-image_image_rng = random.Random(2)
-
 class ImageImageRenderGenerator:
     def __init__(self):
         self.path_to_blender = BLENDER_PATH
@@ -122,6 +120,9 @@ class ImageImageSignatureVector(SignatureVector):
         return self.variant_attributes[0].z_rotation_offset_from_camera
 
 class ImageImageDataLoader:
+    def __init__(self, rng: random.Random) -> None:
+        self.rng = rng
+
     def get_batch_of_signature_vectors(self, invariant_free_mask, batch_size:int = None) -> list[tuple[ImageImageSignatureVector, ImageImageSignatureVector]]: # normally would also include a variant free mask, but this is true trivially in this case.
         # If batch_size is none, should it get the biggest batch size it can?
         # So, basically what we need to do now is:
@@ -140,12 +141,12 @@ class ImageImageDataLoader:
 
         available_scenes = OutdoorSceneData().get_available_scene_ids()
         available_hdris = HDRIData.get_available_hdris_names()
-        selection_of_hdris = image_image_rng.sample(available_hdris, k=batch_size)
-        rotations = [image_image_rng.randint(0, 360) for _ in range(batch_size)]
-        selected_scene_left = image_image_rng.choice(available_scenes)
-        selected_scene_right = image_image_rng.choice(available_scenes)
-        camera_seed_left = image_image_rng.randint(0, 1e6)
-        camera_seed_right = image_image_rng.randint(0, 1e6)
+        selection_of_hdris = self.rng.sample(available_hdris, k=batch_size)
+        rotations = [self.rng.randint(0, 360) for _ in range(batch_size)]
+        selected_scene_left = self.rng.choice(available_scenes)
+        selected_scene_right = self.rng.choice(available_scenes)
+        camera_seed_left = self.rng.randint(0, 1e6)
+        camera_seed_right = self.rng.randint(0, 1e6)
 
         batch = []
         for i in range(batch_size):
@@ -175,7 +176,7 @@ class ImageImageDataLoader:
         return batch
 
 
-    def get_batch_of_images_given_signature_vectors(self, signature_vectors: list[tuple[ImageImageSignatureVector, ImageImageSignatureVector]], shard_index=0, shard_count=1) -> list[tuple[str, str]]:
+    def get_batch_of_images_given_signature_vectors(self, signature_vectors: list[tuple[ImageImageSignatureVector, ImageImageSignatureVector]], shard_index=0, shard_count=1, task_method='split_by_scene') -> list[tuple[str, str]]:
         """Resolve images for a batch, rendering missing ones.
 
         Optimization: group by scene_id and render all images for a scene in one Blender run.
@@ -211,7 +212,6 @@ class ImageImageDataLoader:
 
         # Render per-scene in batches
         renderer = ImageImageRenderGenerator()
-        task_method = 'split_by_scene'
         
         if task_method == 'split_by_scene': # This one tends to be more efficient when many images from one scene will be rendered, that way a blender file with one scene can be loaded and multiple renders can be saved from it.
             scene_ids = sorted(all_to_render_by_scene.keys())
