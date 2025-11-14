@@ -98,9 +98,9 @@ if in_blender:
 
 else:
     # Here we have access to the HDRIs that are available, etc.
-    import subprocess
     from data.signature_vector.data_getters import OutdoorSceneData, HDRIData  # type: ignore
-    from environment import BLENDER_PATH, DATA_PATH 
+    from environment import DATA_PATH
+    from blender_manager import BlenderManager
 
     scene_data = OutdoorSceneData()
     scenes = scene_data.get_available_scene_ids()
@@ -116,11 +116,15 @@ else:
         output_dir = output_root / scene_id
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        subprocess.run(
-            [BLENDER_PATH,
-            scene_path,
-            "--background",
-            "--python", __file__, "--",
-            "--run-inside-blender",
-            "--output-root", str(output_dir),
-            "--hdri-paths"] + hdri_paths)
+        blender_manager = BlenderManager()
+        blender_manager.open_blender_file_with_args(
+            file_path=scene_path,
+            python_script_path=__file__,
+            args_for_python_script=[
+                "--run-inside-blender",
+                "--output-root", str(output_dir),
+                "--hdri-paths",
+                *hdri_paths,
+            ],
+            background=True,
+        )

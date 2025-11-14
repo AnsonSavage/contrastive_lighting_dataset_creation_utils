@@ -3,7 +3,10 @@ import tempfile
 import bpy
 from aov_manager import configure_aovs
 
-from .log import log
+from .log import Logger
+
+
+logger = Logger(prefix="RenderManager", verbose=True)
 
 
 class RenderManager:
@@ -17,7 +20,7 @@ class RenderManager:
 
     @staticmethod
     def set_gpu():
-        log("Attempting to configure GPU rendering...")
+        logger.log("Attempting to configure GPU rendering...")
         try:
             bpy.context.scene.render.engine = "CYCLES"
             bpy.context.scene.cycles.device = "GPU"
@@ -34,9 +37,9 @@ class RenderManager:
                     prefs.compute_device_type = "CUDA"
                     prefs.get_devices()
                 except Exception as e2:
-                    log(f"Warning: Could not set OPTIX or CUDA: {e2}")
+                    logger.log(f"Warning: Could not set OPTIX or CUDA: {e2}")
 
-            log(f"Set compute backend to: {prefs.compute_device_type}")
+            logger.log(f"Set compute backend to: {prefs.compute_device_type}")
 
             # Call get_devices() again to populate the list for the chosen backend
             prefs.get_devices()
@@ -45,14 +48,14 @@ class RenderManager:
             if not prefs.devices:
                 raise Exception("No devices found for the selected backend.")
 
-            log("Enabling devices...")
+            logger.log("Enabling devices...")
             for d in prefs.devices:
                 d.use = True # Set device to be used
-                log(f"Enabled: {d.name}, Type: {d.type}, Use: {d.use}")
+                logger.log(f"Enabled: {d.name}, Type: {d.type}, Use: {d.use}")
 
         except Exception as e:
-            log(f"Warning: Could not configure GPU rendering preferences: {e}")
-            log("Will attempt to render with default scene settings.")
+            logger.log(f"Warning: Could not configure GPU rendering preferences: {e}")
+            logger.log("Will attempt to render with default scene settings.")
     
     def set_render_settings(
         self,
@@ -92,7 +95,8 @@ class RenderManager:
             scene.view_settings.gamma = 1.0
 
         self.bypass_compositing_nodes = bypass_compositing_nodes # stores this value for later use in render() so that aovs can be configured first
-        self.is_render_settings_configured=True
+        self.is_render_settings_configured = True
+        logger.log("Render settings configured.")
     
     def set_aovs(self, aov_names: list[str], output_directory: str) -> None:
         """
@@ -112,7 +116,7 @@ class RenderManager:
         :return: Path to the rendered image
         """
         if not self.is_render_settings_configured:
-            log("Warning: render settings have not been configured")
+            logger.log("Warning: render settings have not been configured")
         
         if self.bypass_compositing_nodes:
             self._bypass_compositing_nodes()
@@ -122,7 +126,7 @@ class RenderManager:
             scene.render.filepath = output_path
 
         bpy.ops.render.render(write_still=True)
-        log(f"Render complete: {scene.render.filepath}")
+        logger.log(f"Render complete: {scene.render.filepath}")
         return scene.render.filepath
     
     def _bypass_compositing_nodes(self):
@@ -140,7 +144,7 @@ class RenderManager:
         
         # Ensure compositing nodes are enabled
         if not scene.use_nodes:
-            log("Compositing nodes are not enabled for this scene.")
+            logger.log("Compositing nodes are not enabled for this scene.")
             return
 
         # Get the compositing node tree
@@ -162,11 +166,11 @@ class RenderManager:
 
         # Check if both nodes were found
         if not render_node:
-            log("Could not find a 'Render Layers' node (CompositorNodeRLayers).")
+            logger.log("Could not find a 'Render Layers' node (CompositorNodeRLayers).")
             return
             
         if not composite_node:
-            log("Could not find a 'Composite' node (CompositorNodeComposite).")
+            logger.log("Could not find a 'Composite' node (CompositorNodeComposite).")
             return
 
         # Get the specific sockets
@@ -174,7 +178,7 @@ class RenderManager:
             render_output = render_node.outputs['Image']
             composite_input = composite_node.inputs['Image']
         except KeyError as e:
-            log(f"Error finding socket: {e}. Nodes may be of unexpected types.")
+            logger.log(f"Error finding socket: {e}. Nodes may be of unexpected types.")
             return
 
         # Remove any existing links connected to the Composite's 'Image' input
@@ -184,9 +188,9 @@ class RenderManager:
         # Create the new, direct link
         try:
             tree.links.new(render_output, composite_input)
-            log("Successfully linked 'Render Layers' to 'Composite' by type.")
+            logger.log("Successfully linked 'Render Layers' to 'Composite' by type.")
         except Exception as e:
-            log(f"An error occurred while linking: {e}")
+            logger.log(f"An error occurred while linking: {e}")
     
     def set_camera(self, camera_object: "bpy.types.Object") -> None:
         """

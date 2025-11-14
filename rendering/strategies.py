@@ -6,6 +6,7 @@ from typing import List, Optional
 from data.signature_vector.data_getters import HDRIData
 from .scene_managers import ImageImageSceneManager, ImageTextSceneManager
 from .render_manager import RenderManager
+from .log import Logger
 
 
 class RenderModeStrategy:
@@ -38,7 +39,6 @@ def _load_payload_bytes(inline_value: Optional[str], path_value: Optional[str], 
         return base64.b64decode(inline_value.encode('ascii'))
     raise ValueError(f"Missing {description}: provide either inline value or *_path argument.")
 
-
 class ImageImageStrategy(RenderModeStrategy):
     def add_args(self, parser) -> None:
         parser.add_argument('--serialized_signature_vector', type=str, required=False, help='Base64-encoded pickle of ImageImageSignatureVector')
@@ -46,6 +46,8 @@ class ImageImageStrategy(RenderModeStrategy):
         parser.add_argument('--output_path', type=str, required=True, help='Path to save the rendered image.')
 
     def run(self, args, render_manager: RenderManager) -> None:
+        logger = Logger(prefix="ImageImageStrategy", verbose=True)
+        logger.log("run started", is_verbose=True)
         sig_bytes = _load_payload_bytes(
             inline_value=args.serialized_signature_vector,
             path_value=args.serialized_signature_vector_path,
@@ -69,6 +71,7 @@ class ImageImageStrategy(RenderModeStrategy):
         aov_output_dir = get_aov_output_directory(args.output_path, scene_id, camera_seed)
         render_manager.set_aovs(args.aovs, aov_output_dir)
         render_manager.render(output_path=args.output_path)
+        logger.log("run completed", is_verbose=True)
 
 
 class ImageImageBatchStrategy(RenderModeStrategy):
@@ -79,6 +82,8 @@ class ImageImageBatchStrategy(RenderModeStrategy):
         parser.add_argument('--serialized_output_paths_path', type=str, required=False, help='Path to pickle data for list[str] of output paths')
 
     def run(self, args, render_manager: RenderManager) -> None:
+        logger = Logger(prefix="ImageImageBatchStrategy", verbose=True)
+        logger.log("run started", is_verbose=True)
         sv_bytes = _load_payload_bytes(
             inline_value=args.serialized_signature_vectors,
             path_value=args.serialized_signature_vectors_path,
@@ -113,6 +118,7 @@ class ImageImageBatchStrategy(RenderModeStrategy):
             aov_output_dir = get_aov_output_directory(outp, scene_id, camera_seed)
             render_manager.set_aovs(args.aovs, aov_output_dir)
             render_manager.render(output_path=outp)
+        logger.log("run completed", is_verbose=True)
 
 
 class ImageTextInstructStrategy(RenderModeStrategy):
@@ -122,6 +128,8 @@ class ImageTextInstructStrategy(RenderModeStrategy):
         parser.add_argument('--output_path', type=str, required=True, help='Path to save the rendered image.')
 
     def run(self, args, render_manager: RenderManager) -> None:
+        logger = Logger(prefix="ImageTextInstructStrategy", verbose=True)
+        logger.log("run started", is_verbose=True)
         signature_vector_bytes = _load_payload_bytes(
             inline_value=args.serialized_signature_vector,
             path_value=args.serialized_signature_vector_path,
@@ -133,6 +141,7 @@ class ImageTextInstructStrategy(RenderModeStrategy):
         scene_manager.setup_scene(signature_vector=signature_vector)
         # TODO: does not yet support aovs
         render_manager.render(output_path=args.output_path)
+        logger.log("run completed", is_verbose=True)
 
 
 def get_strategy(mode: str) -> RenderModeStrategy:

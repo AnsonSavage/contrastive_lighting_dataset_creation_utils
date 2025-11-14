@@ -2,10 +2,17 @@ import bpy
 import mathutils
 import random
 from random_utils import get_random_point_in_mesh
+from rendering.log import Logger
 
 
 class CameraSpawner:
     def __init__(self, look_from_volume_name, look_at_volume_name, camera_name):
+        self.logger = Logger(prefix="CameraSpawner", verbose=True)
+        self.logger.log(
+            f"Initializing CameraSpawner with look_from='{look_from_volume_name}', "
+            f"look_at='{look_at_volume_name}', camera='{camera_name}'",
+            is_verbose=True,
+        )
         self.look_at_volume = bpy.data.objects.get(look_at_volume_name)
         assert self.look_at_volume is not None, f"Look at volume '{look_at_volume_name}' not found in the scene."
         self.look_from_volume = bpy.data.objects.get(look_from_volume_name)
@@ -13,6 +20,7 @@ class CameraSpawner:
         self.camera_name = camera_name
 
     def update(self, update_seed, pass_criteria = None):
+        self.logger.log(f"update() started with seed={update_seed}", is_verbose=True)
         look_at_was_hidden = self.look_at_volume.hide_get()
         look_from_was_hidden = self.look_from_volume.hide_get()
         try:
@@ -37,23 +45,36 @@ class CameraSpawner:
                 look_from_seed = rng.getrandbits(64)
                 look_from = get_random_point_in_mesh(self.look_from_volume, seed=look_from_seed)
                 if look_from is None:
+                    self.logger.log(
+                        f"Attempt {attempts}: Failed to sample look_from point (seed={look_from_seed})",
+                        is_verbose=True,
+                    )
                     continue
                 if pass_criteria is not None:
                     has_good_sample = pass_criteria(look_from, look_at)
+                    self.logger.log(
+                        f"Attempt {attempts}: pass_criteria returned {has_good_sample}",
+                        is_verbose=True,
+                    )
                 else:
                     has_good_sample = True
 
             if not has_good_sample:
-                print(f"Failed to find valid camera positions after {max_attempts} attempts.")
+                self.logger.log(f"Failed to find valid camera positions after {max_attempts} attempts.")
                 return
 
             camera = bpy.data.objects.get(self.camera_name)
             assert camera is not None, f"Camera '{self.camera_name}' not found in the scene."
 
+            self.logger.log(
+                f"Computing look-at matrix for camera '{self.camera_name}'",
+                is_verbose=True,
+            )
             look_at_matrix = self.compute_look_at_matrix(look_from, look_at)
             camera.matrix_world = look_at_matrix
-            print(f"Camera '{self.camera_name}' moved to coordinate: {look_from}")
-            print(f"Camera '{self.camera_name}' now looking at: {look_at}")
+            self.logger.log(f"Camera '{self.camera_name}' moved to coordinate: {look_from}")
+            self.logger.log(f"Camera '{self.camera_name}' now looking at: {look_at}")
+            self.logger.log("update() completed successfully", is_verbose=True)
         finally:
             if look_at_was_hidden:
                 self.look_at_volume.hide_set(True)
@@ -61,8 +82,13 @@ class CameraSpawner:
                 self.look_from_volume.hide_set(True)
 
     def compute_look_at_matrix(self, camera_position: mathutils.Vector, target_position: mathutils.Vector):
+        self.logger.log(
+            f"compute_look_at_matrix() called with camera_position={camera_position}, "
+            f"target_position={target_position}",
+            is_verbose=True,
+        )
         if (camera_position - target_position).length_squared < 0.0001:
-            print("Warning: Camera and target are at the same position.")
+            self.logger.log("Warning: Camera and target are at the same position.")
             return mathutils.Matrix.Translation(camera_position)
 
         camera_direction = (target_position - camera_position).normalized()
@@ -84,4 +110,5 @@ class CameraSpawner:
 
         translation_transform = mathutils.Matrix.Translation(camera_position)
         look_at_transform = translation_transform @ rotation_transform
+        self.logger.log("compute_look_at_matrix() completed", is_verbose=True)
         return look_at_transform

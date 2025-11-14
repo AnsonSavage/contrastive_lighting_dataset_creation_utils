@@ -10,7 +10,10 @@ from data.image_text_instructions_task import ImageTextInstructSignatureVector
 from data.signature_vector.light_attribute import LightIntensity, BlackbodyLightColor, LightDirection
 
 from .hdri_manager import HDRIManager
-from .log import log
+from .log import Logger
+
+
+logger = Logger(prefix="SceneManagers", verbose=True)
 
 
 class SceneManager:
@@ -47,28 +50,30 @@ class ImageImageSceneManager(SceneManager):
             look_at_volume_name=LOOK_AT_VOLUME_OBJ,
             camera_name=PROCEDURAL_CAMERA_OBJ
         )
-        
+
         camera = bpy.data.objects.get(PROCEDURAL_CAMERA_OBJ)
         camera_z_rotation_before = math.degrees(camera.rotation_euler.z)
-        log(f"Camera Z rotation before updating seed: {camera_z_rotation_before} degrees")
+        logger.log(f"Camera Z rotation before updating seed: {camera_z_rotation_before} degrees")
 
         def pass_criteria(look_from, look_at):
             direction = (look_at - look_from).normalized()
             not_looking_up = direction.z < 0.0
             looking_straight_down = mathutils.Vector((0, 0, -1)).dot(direction) > 0.6
             return not_looking_up and not looking_straight_down
-        
+
         camera_spawner.update(update_seed=camera_seed, pass_criteria=pass_criteria)
+        logger.log(f"Camera position updated with seed: {camera_seed}")
+        logger.log(f"Camera location: {camera.location}, rotation (Euler): {camera.rotation_euler}")
 
         # Get Camera's Z rotation after update
         camera = bpy.data.objects.get(PROCEDURAL_CAMERA_OBJ)
         assert camera is not None, f"Camera '{PROCEDURAL_CAMERA_OBJ}' not found in the scene."
         assert camera.rotation_mode == 'XYZ', "Camera rotation mode must be 'XYZ' to extract Z rotation."
         camera_z_rotation = math.degrees(camera.rotation_euler.z)
-        log(f"Camera Z rotation after update: {camera_z_rotation} degrees")
-        
+        logger.log(f"Camera Z rotation after update: {camera_z_rotation} degrees")
+
         hdri_rotation = (camera_z_rotation + hdri_z_rotation_offset) % 360
-        log(f"HDRI rotation set to: {hdri_rotation} degrees (Camera Z: {camera_z_rotation}, Offset: {hdri_z_rotation_offset})")
+        logger.log(f"HDRI rotation set to: {hdri_rotation} degrees (Camera Z: {camera_z_rotation}, Offset: {hdri_z_rotation_offset})")
 
         # Set the scene active camera
         bpy.context.scene.camera = camera
@@ -142,7 +147,10 @@ class ImageTextSceneManager(SceneManager):
         adjusted_intensity = original_ratio * (distance_from_object ** 2)
 
         light.energy = adjusted_intensity
-        log(f"Set light '{light_name}' intensity to {light.energy} (base: {base_intensity}, distance: {distance_from_object})")
+        logger.log(
+            f"Set light '{light_name}' intensity to {light.energy} "
+            f"(base: {base_intensity}, distance: {distance_from_object})"
+        )
     
     def _sample_light_color_blackbody(self, light_name: str, blackbody_color: BlackbodyLightColor, sample_seed: int) -> None:
         rng = random.Random(sample_seed)
@@ -162,7 +170,7 @@ class ImageTextSceneManager(SceneManager):
         light.use_temperature = True
         light.color = (1, 1, 1)  # Reset tint to white before applying temperature
         light.temperature = kelvin_temp
-        log(f"Set light '{light_name}' color temperature to {kelvin_temp}K")
+        logger.log(f"Set light '{light_name}' color temperature to {kelvin_temp}K")
 
     def _sample_light_location(
         self,
@@ -210,12 +218,12 @@ class ImageTextSceneManager(SceneManager):
         constraint.target = obj
     
     def setup_scene(self, signature_vector: ImageTextInstructSignatureVector, **kwargs) -> None:
-        """
-        Set up lights based on the signature vector.
-        
+        """Set up lights based on the signature vector.
+
         :param signature_vector: Signature vector defining the lighting setup
         """
-        log(f"Setting up scene for signature vector: {signature_vector}")
+        logger.log(f"Setting up scene for signature vector: {signature_vector}")
         # TODO: Implement light setup logic based on signature_vector
-        # This would call _sample_light_location, _sample_light_intensity, _sample_light_color_blackbody, etc.
+        # This would call _sample_light_location, _sample_light_intensity,
+        # _sample_light_color_blackbody, etc.
         pass

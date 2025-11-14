@@ -6,9 +6,9 @@ from .signature_vector.signature_vector import SignatureVector
 from .signature_vector.light_attribute import HDRIName
 from .signature_vector.invariant_attributes import SceneID, CameraSeed
 from .signature_vector.data_getters import HDRIData, OutdoorSceneData
-import subprocess
 from concurrent_tasks_helper import ConcurrentTasksHelper
 from .temp_payload import temporary_payload_file
+from blender_manager import BlenderManager
 
 # TODO: We'll need to do some thinking for how to organize all of these classes better :)
 
@@ -22,31 +22,21 @@ class ImageImageRenderGenerator:
         try:
             print("Rendering image to", output_path, flush=True)
             with temporary_payload_file(payload) as payload_path:
-                cmd = [
-                    self.path_to_blender,
-                    scene_path,
-                    '--background' if headless else '',
-                    '--python', 'render_manager.py',
-                    '--',
-                    '--mode=image-image',
-                    f'--output_path={output_path}',
-                    f'--serialized_signature_vector_path={payload_path}',
-                    '--aovs', 'metallic', 'albedo', 'roughness',
-                ]
-                cmd = [arg for arg in cmd if arg]
-                result = subprocess.run(cmd, capture_output=True, check=True)
-        except subprocess.CalledProcessError as e:
-            print("Error during Blender rendering:", flush=True)
-            print(e.stdout.decode('utf-8'), flush=True)
-            print(e.stderr.decode('utf-8'), flush=True)
-            raise e
-
-        for line in result.stdout.splitlines():
-            if '[render_manager]' in line.decode('utf-8'):
-                print(line.decode('utf-8'))
-        if result.stderr:
-            print("Blender script errors: ", result.stderr, flush=True)
-
+                blender_manager = BlenderManager()
+                blender_manager.open_blender_file_with_args(
+                    file_path=scene_path,
+                    python_script_path='render_manager.py',
+                    args_for_python_script=[
+                        '--mode=image-image',
+                        f'--output_path={output_path}',
+                        f'--serialized_signature_vector_path={payload_path}',
+                        '--aovs', 'metallic', 'albedo', 'roughness',
+                    ],
+                    background=headless,
+                )
+        except Exception as e:
+            print("Error occurred while rendering image:")
+            print(e)
         return output_path
 
     def do_render_batch_for_scene(self, signature_vectors: list['ImageImageSignatureVector'], output_paths: list[str], headless: bool = True) -> list[str]:
@@ -69,30 +59,25 @@ class ImageImageRenderGenerator:
         serialized_paths = pickle.dumps(output_paths)
         try:
             with temporary_payload_file(serialized_svs) as sv_path, temporary_payload_file(serialized_paths) as paths_path:
-                cmd = [
-                    self.path_to_blender,
-                    scene_path,
-                    '--background' if headless else '',
-                    '--python', 'render_manager.py',
-                    '--',
-                    '--mode=image-image-batch',
-                    f'--serialized_signature_vectors_path={sv_path}',
-                    f'--serialized_output_paths_path={paths_path}',
-                    '--aovs', 'metallic', 'albedo', 'roughness',
-                ]
-                cmd = [arg for arg in cmd if arg]
-                result = subprocess.run(cmd, capture_output=True, check=True)
-        except subprocess.CalledProcessError as e:
+                blender_manager = BlenderManager()
+                blender_manager.open_blender_file_with_args(
+                    file_path=scene_path,
+                    python_script_path='render_manager.py',
+                    args_for_python_script=[
+                        '--mode=image-image-batch',
+                        f'--serialized_signature_vectors_path={sv_path}',
+                        f'--serialized_output_paths_path={paths_path}',
+                        '--aovs', 'metallic', 'albedo', 'roughness',
+                    ],
+                    background=headless,
+                )
+        except Exception as e:
             print("Error during Blender batch rendering:")
-            print(e.stdout.decode('utf-8'))
-            print(e.stderr.decode('utf-8'))
+            print(e)
             raise e
 
-        for line in result.stdout.splitlines():
-            if '[render_manager]' in line.decode('utf-8'):
-                print(line.decode('utf-8'))
-        if result.stderr:
-            print("Blender script errors: ", result.stderr)
+        # In the BlenderManager streaming mode, output is printed live; we
+        # simply return the expected output_paths.
         return output_paths
 
 class ImageImageSignatureVector(SignatureVector):
