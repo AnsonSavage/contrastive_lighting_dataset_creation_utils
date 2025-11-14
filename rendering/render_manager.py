@@ -187,3 +187,11 @@ class RenderManager:
             log("Successfully linked 'Render Layers' to 'Composite' by type.")
         except Exception as e:
             log(f"An error occurred while linking: {e}")
+    
+    def set_camera(self, camera_object: "bpy.types.Object") -> None:
+        """
+        Set the active camera for the scene.
+        
+        :param camera_object: The Blender camera object to set as active
+        """
+        bpy.context.scene.camera = camera_object
