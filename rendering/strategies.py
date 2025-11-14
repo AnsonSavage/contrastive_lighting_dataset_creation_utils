@@ -1,7 +1,7 @@
 import base64
 import pickle
 import os
-from typing import List
+from typing import List, Optional
 
 from data.signature_vector.data_getters import HDRIData
 from .scene_managers import ImageImageSceneManager, ImageTextSceneManager
@@ -30,13 +30,27 @@ def get_aov_output_directory(image_output_path: str, scene_id: str, camera_seed:
     os.makedirs(aov_output_dir, exist_ok=True)
     return aov_output_dir
 
+def _load_payload_bytes(inline_value: Optional[str], path_value: Optional[str], description: str) -> bytes:
+    if path_value:
+        with open(path_value, 'rb') as payload_file:
+            return payload_file.read()
+    if inline_value:
+        return base64.b64decode(inline_value.encode('ascii'))
+    raise ValueError(f"Missing {description}: provide either inline value or *_path argument.")
+
+
 class ImageImageStrategy(RenderModeStrategy):
     def add_args(self, parser) -> None:
-        parser.add_argument('--serialized_signature_vector', type=str, required=True, help='Base64-encoded pickle of ImageImageSignatureVector')
+        parser.add_argument('--serialized_signature_vector', type=str, required=False, help='Base64-encoded pickle of ImageImageSignatureVector')
+        parser.add_argument('--serialized_signature_vector_path', type=str, required=False, help='Path to pickle data for ImageImageSignatureVector')
         parser.add_argument('--output_path', type=str, required=True, help='Path to save the rendered image.')
 
     def run(self, args, render_manager: RenderManager) -> None:
-        sig_bytes = base64.b64decode(args.serialized_signature_vector.encode('ascii'))
+        sig_bytes = _load_payload_bytes(
+            inline_value=args.serialized_signature_vector,
+            path_value=args.serialized_signature_vector_path,
+            description='serialized_signature_vector'
+        )
         sv = pickle.loads(sig_bytes)
         # Use helper methods on the signature vector to avoid tuple indexing
         hdri_name = sv.get_hdri_name()
@@ -59,12 +73,24 @@ class ImageImageStrategy(RenderModeStrategy):
 
 class ImageImageBatchStrategy(RenderModeStrategy):
     def add_args(self, parser) -> None:
-        parser.add_argument('--serialized_signature_vectors', type=str, required=True, help='Base64-encoded pickle of list[ImageImageSignatureVector]')
-        parser.add_argument('--serialized_output_paths', type=str, required=True, help='Base64-encoded pickle of list[str] for output paths')
+        parser.add_argument('--serialized_signature_vectors', type=str, required=False, help='Base64-encoded pickle of list[ImageImageSignatureVector]')
+        parser.add_argument('--serialized_signature_vectors_path', type=str, required=False, help='Path to pickle data for list[ImageImageSignatureVector]')
+        parser.add_argument('--serialized_output_paths', type=str, required=False, help='Base64-encoded pickle of list[str] for output paths')
+        parser.add_argument('--serialized_output_paths_path', type=str, required=False, help='Path to pickle data for list[str] of output paths')
 
     def run(self, args, render_manager: RenderManager) -> None:
-        sv_list = pickle.loads(base64.b64decode(args.serialized_signature_vectors.encode('ascii')))
-        output_paths: List[str] = pickle.loads(base64.b64decode(args.serialized_output_paths.encode('ascii')))
+        sv_bytes = _load_payload_bytes(
+            inline_value=args.serialized_signature_vectors,
+            path_value=args.serialized_signature_vectors_path,
+            description='serialized_signature_vectors'
+        )
+        output_bytes = _load_payload_bytes(
+            inline_value=args.serialized_output_paths,
+            path_value=args.serialized_output_paths_path,
+            description='serialized_output_paths'
+        )
+        sv_list = pickle.loads(sv_bytes)
+        output_paths: List[str] = pickle.loads(output_bytes)
 
         if len(sv_list) != len(output_paths):
             raise ValueError('serialized_signature_vectors and serialized_output_paths must be same length')
@@ -91,12 +117,16 @@ class ImageImageBatchStrategy(RenderModeStrategy):
 
 class ImageTextInstructStrategy(RenderModeStrategy):
     def add_args(self, parser) -> None:
-        parser.add_argument('--serialized_signature_vector', type=str, required=True, help='Serialized signature vector in pickle format.')
+        parser.add_argument('--serialized_signature_vector', type=str, required=False, help='Serialized signature vector (Base64-encoded pickle).')
+        parser.add_argument('--serialized_signature_vector_path', type=str, required=False, help='Path to pickle data for the signature vector.')
         parser.add_argument('--output_path', type=str, required=True, help='Path to save the rendered image.')
 
     def run(self, args, render_manager: RenderManager) -> None:
-        signature_vector_str = args.serialized_signature_vector
-        signature_vector_bytes = base64.b64decode(signature_vector_str.encode('ascii'))
+        signature_vector_bytes = _load_payload_bytes(
+            inline_value=args.serialized_signature_vector,
+            path_value=args.serialized_signature_vector_path,
+            description='serialized_signature_vector'
+        )
         signature_vector = pickle.loads(signature_vector_bytes)
         
         scene_manager = ImageTextSceneManager()

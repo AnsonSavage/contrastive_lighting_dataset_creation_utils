@@ -1,7 +1,6 @@
 import pickle
 import os
 import random
-import base64
 from environment import BLENDER_PATH, DATA_PATH
 from .signature_vector.signature_vector import SignatureVector
 from .signature_vector.light_attribute import HDRIName, KeyLight, FillLight, RimLight, VirtualLight
@@ -10,6 +9,7 @@ from .signature_vector.data_getters import OutdoorSceneData
 from .signature_vector.signature_vector import SignatureVectorFactory
 import subprocess
 import uuid
+from .temp_payload import temporary_payload_file
 
 image_text_instruct_rng = random.Random(2)
 
@@ -19,19 +19,20 @@ class ImageTextInstructRenderGenerator:
 
     def do_render(self, signature_vector: 'ImageTextInstructSignatureVector', output_path: str):
         # Call Blender in background mode with the current script and pass the necessary arguments
-        serialized_sv = base64.b64encode(pickle.dumps(signature_vector)).decode('ascii')
-        cmd = [
-            self.path_to_blender,
-            '--background',  # Run in background mode
-            '--python', 'render_manager.py',  # Path to this script
-            '--',  # Arguments after this are passed to the script
-            '--output_path', output_path,
-            '--serialized_signature_vector', serialized_sv
-            ,
-            '--aovs', 'metallic', 'albedo', 'roughness'
-        ]
-        # print("Running command:", ' '.join(cmd))  # For debugging purposes
-        result = subprocess.run(cmd, capture_output=True, check=True)
+        payload = pickle.dumps(signature_vector)
+        with temporary_payload_file(payload) as payload_path:
+            cmd = [
+                self.path_to_blender,
+                '--background',  # Run in background mode
+                '--python', 'render_manager.py',  # Path to this script
+                '--',  # Arguments after this are passed to the script
+                '--output_path', output_path,
+                f'--serialized_signature_vector_path={payload_path}',
+                '--aovs', 'metallic', 'albedo', 'roughness'
+            ]
+            cmd = [arg for arg in cmd if arg]
+            # print("Running command:", ' '.join(cmd))  # For debugging purposes
+            result = subprocess.run(cmd, capture_output=True, check=True)
         for line in result.stdout.splitlines():
             print(line.decode('utf-8'))
         for line in result.stderr.splitlines():

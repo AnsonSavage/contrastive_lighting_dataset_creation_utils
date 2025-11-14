@@ -1,6 +1,5 @@
 import os
 import random
-import base64
 import pickle
 from environment import BLENDER_PATH, DATA_PATH
 from .signature_vector.signature_vector import SignatureVector
@@ -9,6 +8,7 @@ from .signature_vector.invariant_attributes import SceneID, CameraSeed
 from .signature_vector.data_getters import HDRIData, OutdoorSceneData
 import subprocess
 from concurrent_tasks_helper import ConcurrentTasksHelper
+from .temp_payload import temporary_payload_file
 
 # TODO: We'll need to do some thinking for how to organize all of these classes better :)
 
@@ -20,21 +20,23 @@ class ImageImageRenderGenerator:
 
     def do_render(self, signature_vector: 'ImageImageSignatureVector', output_path: str, headless: bool = True) -> str:
         scene_path = OutdoorSceneData().get_scene_path_by_id(signature_vector.get_scene_id())
+        payload = pickle.dumps(signature_vector)
         try:
             print("Rendering image to", output_path, flush=True)
-            result = subprocess.run([
-                self.path_to_blender,
-                scene_path,
-                '--background' if headless else '',
-                '--python', 'render_manager.py',
-                
-                '--', # Begin command line args for the script
-                '--mode=image-image',
-                f'--output_path={output_path}',
-                f'--serialized_signature_vector={base64.b64encode(pickle.dumps(signature_vector)).decode("ascii")}',
-                '--aovs', 'metallic', 'albedo', 'roughness',
-            ],
-            capture_output=True, check=True)
+            with temporary_payload_file(payload) as payload_path:
+                cmd = [
+                    self.path_to_blender,
+                    scene_path,
+                    '--background' if headless else '',
+                    '--python', 'render_manager.py',
+                    '--',
+                    '--mode=image-image',
+                    f'--output_path={output_path}',
+                    f'--serialized_signature_vector_path={payload_path}',
+                    '--aovs', 'metallic', 'albedo', 'roughness',
+                ]
+                cmd = [arg for arg in cmd if arg]
+                result = subprocess.run(cmd, capture_output=True, check=True)
         except subprocess.CalledProcessError as e:
             print("Error during Blender rendering:", flush=True)
             print(e.stdout.decode('utf-8'), flush=True)
@@ -65,20 +67,23 @@ class ImageImageRenderGenerator:
             raise ValueError("signature_vectors and output_paths must have the same length")
 
         scene_path = OutdoorSceneData().get_scene_path_by_id(scene_id)
-        serialized_svs = base64.b64encode(pickle.dumps(signature_vectors)).decode('ascii')
-        serialized_paths = base64.b64encode(pickle.dumps(output_paths)).decode('ascii')
+        serialized_svs = pickle.dumps(signature_vectors)
+        serialized_paths = pickle.dumps(output_paths)
         try:
-            result = subprocess.run([
-                self.path_to_blender,
-                scene_path,
-                '--background' if headless else '',
-                '--python', 'render_manager.py',
-                '--',
-                '--mode=image-image-batch',
-                f'--serialized_signature_vectors={serialized_svs}',
-                f'--serialized_output_paths={serialized_paths}',
-                '--aovs', 'metallic', 'albedo', 'roughness',
-            ], capture_output=True, check=True)
+            with temporary_payload_file(serialized_svs) as sv_path, temporary_payload_file(serialized_paths) as paths_path:
+                cmd = [
+                    self.path_to_blender,
+                    scene_path,
+                    '--background' if headless else '',
+                    '--python', 'render_manager.py',
+                    '--',
+                    '--mode=image-image-batch',
+                    f'--serialized_signature_vectors_path={sv_path}',
+                    f'--serialized_output_paths_path={paths_path}',
+                    '--aovs', 'metallic', 'albedo', 'roughness',
+                ]
+                cmd = [arg for arg in cmd if arg]
+                result = subprocess.run(cmd, capture_output=True, check=True)
         except subprocess.CalledProcessError as e:
             print("Error during Blender batch rendering:")
             print(e.stdout.decode('utf-8'))
