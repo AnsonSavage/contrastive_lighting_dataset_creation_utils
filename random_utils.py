@@ -75,43 +75,44 @@ def get_random_point_in_mesh(obj, max_attempts=3000, seed=None):
     min_bound = min_bound - Vector((buffer, buffer, buffer))
     max_bound = max_bound + Vector((buffer, buffer, buffer))
 
-    # 2. Find a point inside the mesh using ray casting
-    # Use scene.ray_cast in world space so hidden/evaluated geometry is respected.
-    scene = bpy.context.scene
-    depsgraph = bpy.context.evaluated_depsgraph_get()
+    # 2. Find a point inside the mesh using ray casting in object space
+    # Get the matrix to convert from world space to local space
+    matrix_world_inv = obj.matrix_world.inverted()
 
     for i in range(max_attempts):
-        random_point = Vector((
+        random_point_world = Vector((
             rng.uniform(min_bound.x, max_bound.x),
             rng.uniform(min_bound.y, max_bound.y),
             rng.uniform(min_bound.z, max_bound.z)
         ))
 
-        ray_direction = Vector((1, 0, 0))
+        # Define ray direction in world space
+        ray_direction_world = Vector((1, 0, 0))
+
+        # Transform the ray into the object's local space
+        random_point_local = matrix_world_inv @ random_point_world
+        # Use the 3x3 part of the matrix for directions (avoids translation)
+        ray_direction_local = (matrix_world_inv.to_3x3() @ ray_direction_world).normalized()
+
         intersections = 0
-        current_point = random_point
+        current_point_local = random_point_local
 
         while True:
-            # scene.ray_cast returns (hit, location, normal, index, hit_object, matrix)
-            hit, location, normal, index, hit_obj, matrix = scene.ray_cast(
-                depsgraph,
-                current_point,
-                ray_direction
-            )
+            # Cast in local space using the object's own ray_cast
+            hit, location_local, normal_local, index = obj.ray_cast(current_point_local, ray_direction_local)
 
             if not hit:
+                # No more hits along this ray in local space
                 break
 
-            # Count only intersections with the target object (evaluated object may be returned)
-            if hit_obj == obj:
-                intersections += 1
-
-            # Move a tiny step past the hit to continue the ray
-            current_point = location + ray_direction * 0.0001
+            intersections += 1
+            # Advance slightly in local space to continue the ray
+            current_point_local = location_local + ray_direction_local * 0.0001
 
         if intersections % 2 == 1:
             print(f"Found a point inside after {i + 1} attempts.")
-            return random_point
+            # Return the original world-space point
+            return random_point_world
 
     print(f"Failed to find an interior point after {max_attempts} attempts.")
     return None
