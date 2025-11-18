@@ -19,7 +19,7 @@ class CameraSpawner:
         assert self.look_from_volume is not None, f"Look from volume '{look_from_volume_name}' not found in the scene."
         self.camera_name = camera_name
 
-    def update(self, update_seed, pass_criteria = None):
+    def update(self, update_seed, pass_criteria=None, restore_hidden_state=False):
         self.logger.log(f"update() started with seed={update_seed}", is_verbose=True)
         look_at_was_hidden = self.look_at_volume.hide_get()
         look_from_was_hidden = self.look_from_volume.hide_get()
@@ -76,10 +76,11 @@ class CameraSpawner:
             self.logger.log(f"Camera '{self.camera_name}' now looking at: {look_at}")
             self.logger.log("update() completed successfully", is_verbose=True)
         finally:
-            if look_at_was_hidden:
-                self.look_at_volume.hide_set(True)
-            if look_from_was_hidden:
-                self.look_from_volume.hide_set(True)
+            if restore_hidden_state:
+                if look_at_was_hidden:
+                    self.look_at_volume.hide_set(True)
+                if look_from_was_hidden:
+                    self.look_from_volume.hide_set(True)
 
     def compute_look_at_matrix(self, camera_position: mathutils.Vector, target_position: mathutils.Vector):
         self.logger.log(

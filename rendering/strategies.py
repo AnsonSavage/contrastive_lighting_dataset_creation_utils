@@ -70,6 +70,10 @@ class ImageImageStrategy(RenderModeStrategy):
         scene_id = sv.get_scene_id()
         aov_output_dir = get_aov_output_directory(args.output_path, scene_id, camera_seed)
         render_manager.set_aovs(args.aovs, aov_output_dir)
+        # Skip render if output already exists
+        if os.path.exists(args.output_path):
+            Logger(prefix="RenderModeStrategy", verbose=True).log(f"Skipping existing output: {args.output_path}")
+            return
         render_manager.render(output_path=args.output_path)
         logger.log("run completed", is_verbose=True)
 
@@ -117,6 +121,10 @@ class ImageImageBatchStrategy(RenderModeStrategy):
             scene_id = sv.get_scene_id()
             aov_output_dir = get_aov_output_directory(outp, scene_id, camera_seed)
             render_manager.set_aovs(args.aovs, aov_output_dir)
+            # Skip render if output already exists
+            if os.path.exists(outp):
+                Logger(prefix="RenderModeStrategy", verbose=True).log(f"Skipping existing output: {outp}")
+                continue
             render_manager.render(output_path=outp)
         logger.log("run completed", is_verbose=True)
 
@@ -140,6 +148,10 @@ class ImageTextInstructStrategy(RenderModeStrategy):
         scene_manager = ImageTextSceneManager()
         scene_manager.setup_scene(signature_vector=signature_vector)
         # TODO: does not yet support aovs
+        # Skip render if output already exists
+        if os.path.exists(args.output_path):
+            Logger(prefix="RenderModeStrategy", verbose=True).log(f"Skipping existing output: {args.output_path}")
+            return
         render_manager.render(output_path=args.output_path)
         logger.log("run completed", is_verbose=True)
 

@@ -179,12 +179,29 @@ class AOVNodeManager:
         return compositing_node.outputs.get(pass_name)
     
     def add_file_output_node(self, node_tree, output_path, input_socket):
+        """Create a File Output node pointing to the given file path.
+
+        Blender's File Output node expects a directory in `base_path` and a
+        filename prefix (without extension) in the file slot's `path`. Passing
+        a full path including an extension as `base_path` causes Blender to
+        treat that as a folder name (e.g. "normal.png" directory), which we
+        want to avoid.
+        """
+        import os
+
+        directory, filename = os.path.split(output_path)
+        name_no_ext, _ = os.path.splitext(filename)
+
         file_output_node = node_tree.nodes.new("CompositorNodeOutputFile")
-        file_output_node.base_path = output_path
+        file_output_node.base_path = directory
         file_output_node.location = (400, 0)
         file_output_node.format.color_management = 'OVERRIDE'
         file_output_node.format.color_mode = 'RGB'
         file_output_node.format.view_settings.view_transform = 'Standard'
+
+        # Configure first file slot to use the filename stem as prefix
+        slot = file_output_node.file_slots[0]
+        slot.path = name_no_ext
 
         node_tree.links.new(file_output_node.inputs[0], input_socket)
         return file_output_node
@@ -197,7 +214,7 @@ class AOVManager(ABC):
         self.node_manager = AOVNodeManager(self.input_name, {}, self.log)
 
     def log(self, msg: str):
-        print(f"[AOV Builder:{self.pass_name}] {msg}")
+        print(f"[AOV Builder:{self.pass_name}] {msg}", flush=True)
 
     def _configure_file_output(self, scene, pass_name, output_path):
         scene.use_nodes = True # Enable compositing nodes if not already enabled
@@ -237,6 +254,29 @@ class AlbedoAOVManager(AOVManager):
     
     def _get_output_name(self):
         return "albedo"
+
+
+class NormalAOVManager(AOVManager):
+    """Manages a global Normal AOV using Blender's built-in Normal pass.
+
+    This does not modify materials. It simply enables the Normal pass on the
+    active view layer and configures a compositor file output for it.
+    """
+
+    def __init__(self, output_directory: str):
+        # Use the built-in "Normal" pass name from the Render Layers node
+        super().__init__(input_name="Normal", output_directory=output_directory)
+        self.pass_name = "Normal"
+
+    def _configure_for_aov(self):
+        # Enable the Normal pass on the active view layer
+        view_layer = bpy.context.view_layer
+        view_layer.use_pass_normal = True
+        self.log("Enabled Normal pass on view layer.")
+
+    def _get_output_name(self):
+        # File will be written as "normal.png" in the configured output directory
+        return "normal"
 
 class NonDefaultAOVManager(AOVManager):
     """Refactors previous procedural script into a class-based interface.
@@ -303,9 +343,12 @@ class NonDefaultAOVManager(AOVManager):
         return self.input_name
         
 def get_aov_manager_factory(input_name: str, output_directory: str) -> AOVManager:
-    if input_name.lower() == "albedo":
+    name_l = input_name.lower()
+    if name_l == "albedo":
         return AlbedoAOVManager(output_directory=output_directory)
-    elif input_name.lower() in ("roughness", "metallic"):
+    elif name_l == "normal":
+        return NormalAOVManager(output_directory=output_directory)
+    elif name_l in ("roughness", "metallic"):
         return NonDefaultAOVManager(input_name=input_name.title(), output_directory=output_directory)
     else:
         raise ValueError(f"Unsupported AOV input name: {input_name}")

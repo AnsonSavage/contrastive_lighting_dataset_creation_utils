@@ -30,7 +30,7 @@ class ImageImageRenderGenerator:
                         '--mode=image-image',
                         f'--output_path={output_path}',
                         f'--serialized_signature_vector_path={payload_path}',
-                        '--aovs', 'metallic', 'albedo', 'roughness',
+                        '--aovs', 'metallic', 'albedo', 'roughness', 'normal'
                     ],
                     background=headless,
                 )
@@ -67,7 +67,7 @@ class ImageImageRenderGenerator:
                         '--mode=image-image-batch',
                         f'--serialized_signature_vectors_path={sv_path}',
                         f'--serialized_output_paths_path={paths_path}',
-                        '--aovs', 'metallic', 'albedo', 'roughness',
+                        '--aovs', 'metallic', 'albedo', 'roughness', 'normal'
                     ],
                     background=headless,
                 )

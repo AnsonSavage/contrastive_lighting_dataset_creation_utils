@@ -33,8 +33,8 @@ def main() -> None:
     strategy.add_args(parser)
     # Allow callers to request a list of AOVs (Arbitrary Output Variables) to be ensured
     # during the render. Default includes metallic, albedo and roughness as requested.
-    parser.add_argument('--aovs', nargs='+', default=['metallic', 'albedo', 'roughness'],
-                        help='List of AOVs to ensure are rendered (e.g. metallic albedo roughness)')
+    parser.add_argument('--aovs', nargs='+', default=['metallic', 'albedo', 'roughness', 'normal'],
+                        help='List of AOVs to ensure are rendered (e.g. metallic albedo roughness normal)')
     args_after_dashdash = [arg for arg in args_after_dashdash if not arg.startswith('--mode=')]
     args = parser.parse_args(args_after_dashdash)
 

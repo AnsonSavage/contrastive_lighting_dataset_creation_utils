@@ -102,7 +102,7 @@ class RenderManager:
         """
         Configure Arbitrary Output Variables (AOVs) to be rendered.
         
-        :param aov_names: List of AOV names to configure (e.g. 'metallic', 'albedo', 'roughness')
+        :param aov_names: List of AOV names to configure (e.g. 'metallic', 'albedo', 'roughness', 'normal')
         :param output_directory: Directory where AOV outputs will be saved
         """
         configure_aovs(aov_names, output_directory)
@@ -123,7 +123,12 @@ class RenderManager:
 
         scene = bpy.context.scene
         if output_path is not None:
-            scene.render.filepath = output_path
+            # If the output already exists, skip rendering to avoid re-computation
+            if os.path.exists(str(output_path)):
+                logger.log(f"Skipping render - output already exists: {output_path}")
+                return str(output_path)
+
+            scene.render.filepath = str(output_path)
 
         bpy.ops.render.render(write_still=True)
         logger.log(f"Render complete: {scene.render.filepath}")

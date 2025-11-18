@@ -51,13 +51,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="DataLoader test script with sharding.")
     parser.add_argument('--shard-index', type=int, default=0, help='Index of the current shard (0-based).')
     parser.add_argument('--shard-count', type=int, default=1, help='Total number of shards.')
-    parser.add_argument('--num-iter', type=int, default=256, help='Total number of iterations.')
+    parser.add_argument('--num-iter', type=int, default=2, help='Total number of iterations.')
     parser.add_argument('--batch-size', type=int, default=8, help='Number of images to render with the same content but different lighting.')
     args = parser.parse_args()
     shard_index, shard_count = choose_shard(args)
 
     n_iter = args.num_iter
-    image_image_rng = random.Random(2)
+    image_image_rng = random.Random(3)
     dataloader = ImageImageDataLoader(image_image_rng)
     signature_vectors = []
     for i in range(n_iter):

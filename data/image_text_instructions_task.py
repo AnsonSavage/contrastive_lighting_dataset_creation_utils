@@ -28,7 +28,6 @@ class ImageTextInstructRenderGenerator:
                 args_for_python_script=[
                     '--output_path', output_path,
                     f'--serialized_signature_vector_path={payload_path}',
-                    '--aovs', 'metallic', 'albedo', 'roughness',
                 ],
                 background=True,
             )
