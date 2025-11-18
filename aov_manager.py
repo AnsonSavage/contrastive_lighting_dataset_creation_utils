@@ -193,6 +193,7 @@ class AOVNodeManager:
         name_no_ext, _ = os.path.splitext(filename)
 
         file_output_node = node_tree.nodes.new("CompositorNodeOutputFile")
+        file_output_node.label = "AOV_Output"
         file_output_node.base_path = directory
         file_output_node.location = (400, 0)
         file_output_node.format.color_management = 'OVERRIDE'
@@ -353,7 +354,16 @@ def get_aov_manager_factory(input_name: str, output_directory: str) -> AOVManage
     else:
         raise ValueError(f"Unsupported AOV input name: {input_name}")
 
+def clear_aov_output_nodes(node_tree):
+    """Remove all File Output nodes that were created for AOVs."""
+    nodes_to_remove = [n for n in node_tree.nodes if n.bl_idname == "CompositorNodeOutputFile" and n.label == "AOV_Output"]
+    for n in nodes_to_remove:
+        node_tree.nodes.remove(n)
+
 def configure_aovs(input_names: list[str], output_directory: str) -> None:
+    if bpy.context.scene.use_nodes:
+        clear_aov_output_nodes(bpy.context.scene.node_tree)
+
     for name in input_names:
         builder = get_aov_manager_factory(name, output_directory)
         builder.apply()
