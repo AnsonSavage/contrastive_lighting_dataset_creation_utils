@@ -105,7 +105,7 @@ class ImageImageBatchStrategy(RenderModeStrategy):
             raise ValueError('serialized_signature_vectors and serialized_output_paths must be same length')
 
         scene_manager = ImageImageSceneManager()
-        for sv, outp in zip(sv_list, output_paths):
+        for sv, output_path in zip(sv_list, output_paths):
             # Use helper methods on the signature vector to avoid tuple indexing
             hdri_name = sv.get_hdri_name()
             hdri_rot = sv.get_hdri_rotation()
@@ -119,13 +119,13 @@ class ImageImageBatchStrategy(RenderModeStrategy):
             )
             # Unique AOV directory per content and camera seed
             scene_id = sv.get_scene_id()
-            aov_output_dir = get_aov_output_directory(outp, scene_id, camera_seed)
+            aov_output_dir = get_aov_output_directory(output_path, scene_id, camera_seed)
             render_manager.set_aovs(args.aovs, aov_output_dir)
             # Skip render if output already exists
-            if os.path.exists(outp):
-                Logger(prefix="RenderModeStrategy", verbose=True).log(f"Skipping existing output: {outp}")
+            if os.path.exists(output_path):
+                Logger(prefix="RenderModeStrategy", verbose=True).log(f"Skipping existing output: {output_path}")
                 continue
-            render_manager.render(output_path=outp)
+            render_manager.render(output_path=output_path)
         logger.log("run completed", is_verbose=True)
 
 
