@@ -16,5 +16,5 @@ export OMP_NUM_THREADS=$SLURM_CPUS_ON_NODE
 
 cd ~/masters_thesis/contrastive_lighting_dataset_creation_utils
 export BLENDER_PATH="/home/ansonsav/blender/blender-4.5.4-linux-x64/blender"
-export DATA_PATH="/home/ansonsav/masters_thesis/contrastive_lighting_dataset_creation_utils/contrastive_data"
+export DATA_PATH="/home/ansonsav/nobackup/autodelete/contrastive_lighting_dataset"
 venv/bin/python3 render_default_collection_cameras.py

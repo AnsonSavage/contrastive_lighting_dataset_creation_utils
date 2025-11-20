@@ -9,7 +9,7 @@
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=ansonsav@byu.edu
 
-#SBATCH --array=0-1
+#SBATCH --array=0-7
 
 # Set the max number of threads to use for programs using OpenMP. Should be <= ppn. Does nothing if the program doesn't use OpenMP.
 export OMP_NUM_THREADS=$SLURM_CPUS_ON_NODE
@@ -36,5 +36,5 @@ echo "Running shard $(($NORM_INDEX+1)) of $SHARD_COUNT" >&2
 
 cd ~/masters_thesis/contrastive_lighting_dataset_creation_utils
 export BLENDER_PATH="/home/ansonsav/blender/blender-4.5.4-linux-x64/blender"
-export DATA_PATH="/home/ansonsav/masters_thesis/contrastive_lighting_dataset_creation_utils/contrastive_data"
+export DATA_PATH="/home/ansonsav/nobackup/autodelete/contrastive_lighting_dataset"
 venv/bin/python3 -m data.task_dataloader --shard-index "$NORM_INDEX" --shard-count "$SHARD_COUNT"
