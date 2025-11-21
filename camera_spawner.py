@@ -6,7 +6,16 @@ from rendering.log import Logger
 
 
 class CameraSpawner:
-    def __init__(self, look_from_volume_name, look_at_volume_name, camera_name):
+    def __init__(self, look_from_volume_name, look_at_volume_name, camera_name, use_look_at_volume_exact_location=False):
+        """ Initialize CameraSpawner class
+
+        Args:
+            look_from_volume_name (str): Name of the volume object to look from.
+            look_at_volume_name (str): Name of the volume object to look at.
+            camera_name (str): Name of the camera object.
+            use_look_at_volume_exact_location (bool, optional): Whether to use the exact location of the look_at volume. Defaults to False.
+        """
+
         self.logger = Logger(prefix="CameraSpawner", verbose=True)
         self.logger.log(
             f"Initializing CameraSpawner with look_from='{look_from_volume_name}', "
@@ -18,6 +27,7 @@ class CameraSpawner:
         self.look_from_volume = bpy.data.objects.get(look_from_volume_name)
         assert self.look_from_volume is not None, f"Look from volume '{look_from_volume_name}' not found in the scene."
         self.camera_name = camera_name
+        self.use_look_at_volume_exact_location = use_look_at_volume_exact_location
 
     def update(self, update_seed, pass_criteria=None, restore_hidden_state=False):
         self.logger.log(f"update() started with seed={update_seed}", is_verbose=True)
@@ -38,10 +48,13 @@ class CameraSpawner:
             look_from = None
             while not has_good_sample and attempts < max_attempts:
                 attempts += 1
-                look_at_seed = rng.getrandbits(64)
-                look_at = get_random_point_in_mesh(self.look_at_volume, seed=look_at_seed)
-                if look_at is None:
-                    continue
+                if self.use_look_at_volume_exact_location:
+                    look_at = self.look_at_volume.location
+                else:
+                    look_at_seed = rng.getrandbits(64)
+                    look_at = get_random_point_in_mesh(self.look_at_volume, seed=look_at_seed)
+                    if look_at is None:
+                        continue
                 look_from_seed = rng.getrandbits(64)
                 look_from = get_random_point_in_mesh(self.look_from_volume, seed=look_from_seed)
                 if look_from is None:
