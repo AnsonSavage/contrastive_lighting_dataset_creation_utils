@@ -4,8 +4,12 @@ import math
 from mathutils import Vector, Matrix
 import sys
 
+import importlib
 sys.path.append(r'C:\Users\yaboy\OneDrive\Documents\BYU\Masters_Thesis\contrastive_lighting_dataset_creation_utils')
 from camera_spawner import CameraSpawner
+from utils.random_utils import get_random_point_on_surface
+importlib.reload(sys.modules.get('camera_spawner'))
+importlib.reload(sys.modules.get('utils.random_utils'))
 
 class DiscreteLightGenerator:
     def __init__(self, seed=21, collection_name="Generated_Lighting"):
@@ -151,12 +155,96 @@ class DiscreteLightGenerator:
     def set_seed(self, new_seed):
         self.seed = new_seed
 
+class ObjectLoader:
+    def import_object(self, path_to_object: str) -> bpy.types.Object:
+        """Loads a glb/fbx model into the scene and returns the active object."""
+        # Deselect all objects first to identify the new ones
+        bpy.ops.object.select_all(action='DESELECT')
+
+        if path_to_object.endswith(".glb") or path_to_object.endswith(".gltf"):
+            bpy.ops.import_scene.gltf(filepath=path_to_object, merge_vertices=True)
+        elif path_to_object.endswith(".fbx"):
+            bpy.ops.import_scene.fbx(filepath=path_to_object)
+        else:
+            raise ValueError(f"Unsupported file type: {path_to_object}")
+        
+        # The imported objects are selected. Get the active one.
+        selected_objects = bpy.context.selected_objects
+        if not selected_objects:
+            print("Warning: No objects were imported.")
+            return None
+            
+        active_obj = bpy.context.view_layer.objects.active
+        if not active_obj and selected_objects:
+            active_obj = selected_objects[0]
+            bpy.context.view_layer.objects.active = active_obj
+            
+        return active_obj
+    
+    def set_object_origin(self, obj: bpy.types.Object) -> None:
+        """
+        Sets the object origin such that x and y are the center of the bounding box 
+        and z is the min of the bounding box.
+        """
+        if not obj:
+            return
+
+        # Ensure the object is active and selected
+        bpy.context.view_layer.objects.active = obj
+        obj.select_set(True)
+        
+        # Force update to ensure bounding box is correct
+        bpy.context.view_layer.update()
+        
+        # Calculate world space bounding box corners
+        bbox_corners = [obj.matrix_world @ Vector(corner) for corner in obj.bound_box]
+        
+        min_x = min([v.x for v in bbox_corners])
+        max_x = max([v.x for v in bbox_corners])
+        min_y = min([v.y for v in bbox_corners])
+        max_y = max([v.y for v in bbox_corners])
+        min_z = min([v.z for v in bbox_corners])
+        
+        center_x = (min_x + max_x) / 2
+        center_y = (min_y + max_y) / 2
+        bottom_z = min_z
+        
+        # Use the 3D cursor to set the origin
+        saved_cursor_loc = bpy.context.scene.cursor.location.copy()
+        
+        bpy.context.scene.cursor.location = Vector((center_x, center_y, bottom_z))
+        
+        # Set origin to cursor
+        bpy.ops.object.origin_set(type='ORIGIN_CURSOR')
+        
+        # Restore cursor
+        bpy.context.scene.cursor.location = saved_cursor_loc
+    
+
+
+def place_empty_at_location(location: Vector, name: str = "Empty") -> bpy.types.Object:
+    """Places an empty object at the specified location."""
+    bpy.ops.object.empty_add(type='PLAIN_AXES', location=location)
+    empty_obj = bpy.context.active_object
+    empty_obj.name = name
+    return empty_obj
+
 if __name__ == "__main__":
     focus_object = bpy.data.objects.get("focus_object")
-    active_cam = bpy.context.scene.camera
-    camera_spawner = CameraSpawner("look_from_volume", focus_object.name, active_cam.name, use_look_at_volume_exact_location=True)
-    camera_spawner.update(random.randint(0, 10000), restore_hidden_state=True)
+    # active_cam = bpy.context.scene.camera
+    # camera_spawner = CameraSpawner("look_from_volume", focus_object.name, active_cam.name, use_look_at_volume_exact_location=True)
+    # camera_spawner.update(random.randint(0, 10000), restore_hidden_state=True)
     
-    generator = DiscreteLightGenerator()
-    generator.set_seed(random.randint(0, 10000))
-    generator.generate_lights(focus_object, active_cam)
+    # generator = DiscreteLightGenerator()
+    # generator.set_seed(random.randint(0, 10000))
+    # generator.generate_lights(focus_object, active_cam)
+
+    object_loader = ObjectLoader()
+    object_loader.set_object_origin(focus_object)
+
+    plane_to_scatter_on = bpy.data.objects.get("scatter_plane")
+    random_point_on_plane = get_random_point_on_surface(plane_to_scatter_on)
+
+    if bpy.data.objects.get("Focus_Empty"):
+        bpy.data.objects.remove(bpy.data.objects["Focus_Empty"], do_unlink=True)
+    place_empty_at_location(random_point_on_plane, name="Focus_Empty")
