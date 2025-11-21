@@ -6,3 +6,4 @@ venv/
 .vscode/
 contrastive_data/*
 *.out
+input_models_path.json
