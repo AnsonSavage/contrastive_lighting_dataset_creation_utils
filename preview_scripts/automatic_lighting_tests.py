@@ -32,6 +32,7 @@ def hacky_stuff_to_make_environment_work():
     # Get the directory of the script file
     # For /path/to/script.py, this will be /path/to
     script_directory = os.path.dirname(script_filepath)
+    parent_directory = os.path.dirname(script_directory)
 
     # Reload modules
     if str(script_directory) in sys.path:
@@ -40,13 +41,17 @@ def hacky_stuff_to_make_environment_work():
     print("Adding current directory to sys.path:", str(script_directory))
     sys.path.append(str(script_directory))
 
+    if str(parent_directory) not in sys.path:
+        print("Adding parent directory to sys.path:", str(parent_directory))
+        sys.path.append(str(parent_directory))
+
 hacky_stuff_to_make_environment_work()
 import data.image_text_instructions_task
-import render_manager
+import rendering.scene_managers
 importlib.reload(sys.modules.get('data.image_text_instructions_task'))
-importlib.reload(sys.modules.get('render_manager'))
+importlib.reload(sys.modules.get('rendering.scene_managers'))
 from data.image_text_instructions_task import ImageTextInstructSignatureVector
-from render_manager import ImageTextRenderManager
+from rendering.scene_managers import ImageTextSceneManager
 from data.signature_vector.light_attribute import HDRIName, KeyLight, FillLight, RimLight, VirtualLight, LightSize, LightDirection, LightIntensity, BlackbodyLightColor
 
 def sample_cone(normal: Vector, theta_max_deg: float) -> Vector:
@@ -157,13 +162,13 @@ def process_signature_vector(
 ) -> None:
     primary_light = signature_vector.variant_attributes[0]
     primary_light_intensity = primary_light.light_intensity
-    ImageTextRenderManager()._sample_light_intensity(
+    ImageTextSceneManager()._sample_light_intensity(
         light_name='TriLamp-Key',
         distance_from_object=get_distance_between_objects(bpy.data.objects.get('TriLamp-Key'), obj),
         intensity=primary_light_intensity,
         sample_seed=random.randint(0, 1e6)
     )
-    ImageTextRenderManager()._sample_light_color_blackbody(
+    ImageTextSceneManager()._sample_light_color_blackbody(
         light_name='TriLamp-Key',
         blackbody_color=primary_light.light_color,
         sample_seed=random.randint(0, 1e6)

@@ -26,7 +26,7 @@ but continue with the RNG sequence for the other tasks.
 import random
 from data.image_image_task import ImageImageDataLoader
 import argparse
-from concurrent_tasks_helper import choose_shard
+from utils.concurrent_tasks_helper import choose_shard
 
 # Make a separate random number generator for each task
 image_text_image_based_rng = random.Random(1)

@@ -90,10 +90,10 @@ Downstream modules should import from `environment` instead of calling `dotenv` 
 - Headless renders are launched via subprocess using `BLENDER_PATH`.
 
 ## Poly Haven HDRIs
-Use `polyhaven_hdri_downloader.py` to populate `DATA_PATH/hdri`. Example:
+Use `remote_data_acquisition_scripts/polyhaven_hdri_downloader.py` to populate `DATA_PATH/hdri`. Example:
 
 ```
-python polyhaven_hdri_downloader.py \
+python remote_data_acquisition_scripts/polyhaven_hdri_downloader.py \
   /path/to/DATA_PATH/hdri \
   kiara_1_dawn venice_sunrise abandon_building \
   --resolution 4k --format exr
@@ -116,6 +116,17 @@ You can also override by exporting shell variables (they take precedence):
 export BLENDER_PATH=/custom/blender
 export DATA_PATH=/custom/data_root
 ```
+
+## Project Structure
+
+- `data/`: Core dataset definitions and task logic.
+- `dummy_data/`: Sample data for testing (HDRIs, scenes).
+- `local_data_acquisition_scripts/`: Scripts for generating data locally (e.g., `render_configuration_text_pair.py`).
+- `preview_scripts/`: Tools for previewing assets and lighting (e.g., `automatic_lighting_tests.py`).
+- `remote_data_acquisition_scripts/`: Scripts for downloading external assets (e.g., `polyhaven_hdri_downloader.py`, `download_objaverse.py`).
+- `rendering/`: Core rendering logic and managers.
+- `scene_preparation_scripts/`: Utilities for preparing scenes (e.g., `configure_camera_collections.py`).
+- `utils/`: General utility functions.
 
 ---
 Happy rendering!

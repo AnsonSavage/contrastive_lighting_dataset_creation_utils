@@ -31,7 +31,7 @@ if in_blender:
     import bpy
     from rendering.render_manager import RenderManager 
     from rendering.hdri_manager import HDRIManager
-    from configure_camera_collections import (  # type: ignore
+    from scene_preparation_scripts.configure_camera_collections import (  # type: ignore
         CAMERAS_FOR_DATASET_COLL,
         DEFAULT_COLL,
     )

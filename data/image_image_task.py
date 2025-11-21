@@ -6,7 +6,7 @@ from .signature_vector.signature_vector import SignatureVector
 from .signature_vector.light_attribute import HDRIName
 from .signature_vector.invariant_attributes import SceneID, CameraSeed
 from .signature_vector.data_getters import HDRIData, OutdoorSceneData
-from concurrent_tasks_helper import ConcurrentTasksHelper
+from utils.concurrent_tasks_helper import ConcurrentTasksHelper
 from .temp_payload import temporary_payload_file
 from blender_manager import BlenderManager
 

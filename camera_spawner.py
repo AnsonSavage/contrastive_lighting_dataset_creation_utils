@@ -1,7 +1,7 @@
 import bpy
 import mathutils
 import random
-from random_utils import get_random_point_in_mesh
+from utils.random_utils import get_random_point_in_mesh
 from rendering.log import Logger
 
 
