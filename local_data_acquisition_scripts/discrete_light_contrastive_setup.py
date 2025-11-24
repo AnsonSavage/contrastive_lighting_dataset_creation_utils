@@ -12,18 +12,16 @@ importlib.reload(sys.modules.get('camera_spawner'))
 importlib.reload(sys.modules.get('utils.random_utils'))
 
 class DiscreteLightGenerator:
-    def __init__(self, seed=21, collection_name="Generated_Lighting"):
+    def __init__(self, collection_name="Generated_Lighting", seed=21):
         self.seed = seed
         self.collection_name = collection_name
         
-        # Cone Angle
-        # 90.0 = Full Hemisphere (down to the floor)
-        # 80.0 = Stops 10 degrees before hitting the floor (safer)
-        self.max_cone_angle = 80.0
+        # Cone Angle (where 90.0 = Full Hemisphere)
+        self.max_cone_angle = 70.0
 
         # Light Count
         self.min_lights = 1
-        self.max_lights = 4
+        self.max_lights = 3
 
         # Distance / Size / Power
         self.min_dist = 2.0
@@ -220,7 +218,9 @@ class ObjectLoader:
         # Restore cursor
         bpy.context.scene.cursor.location = saved_cursor_loc
     
-
+def get_object_rotation_degrees (obj: bpy.types.Object, axis:str) -> float:
+    assert axis.lower() in ('x', 'y', 'z'), "Axis must be 'x', 'y', or 'z'"
+    return math.degrees(getattr(obj.rotation_euler, axis.lower()))
 
 def place_empty_at_location(location: Vector, name: str = "Empty") -> bpy.types.Object:
     """Places an empty object at the specified location."""
@@ -231,20 +231,25 @@ def place_empty_at_location(location: Vector, name: str = "Empty") -> bpy.types.
 
 if __name__ == "__main__":
     focus_object = bpy.data.objects.get("focus_object")
-    # active_cam = bpy.context.scene.camera
-    # camera_spawner = CameraSpawner("look_from_volume", focus_object.name, active_cam.name, use_look_at_volume_exact_location=True)
-    # camera_spawner.update(random.randint(0, 10000), restore_hidden_state=True)
-    
-    # generator = DiscreteLightGenerator()
-    # generator.set_seed(random.randint(0, 10000))
-    # generator.generate_lights(focus_object, active_cam)
+    active_cam = bpy.context.scene.camera
 
     object_loader = ObjectLoader()
     object_loader.set_object_origin(focus_object)
 
     plane_to_scatter_on = bpy.data.objects.get("scatter_plane")
     random_point_on_plane = get_random_point_on_surface(plane_to_scatter_on)
+    
+    # Set the focus object's location to the random point on the plane
+    focus_object.location = random_point_on_plane
+    # Randomly rotate around the z axis
+    focus_object.rotation_euler.z = random.uniform(0, 2 * math.pi)
 
-    if bpy.data.objects.get("Focus_Empty"):
-        bpy.data.objects.remove(bpy.data.objects["Focus_Empty"], do_unlink=True)
-    place_empty_at_location(random_point_on_plane, name="Focus_Empty")
+    camera_spawner = CameraSpawner("look_from_volume", focus_object.name, active_cam.name, use_look_at_volume_exact_location=True)
+    camera_spawner.update(random.randint(0, 10000), restore_hidden_state=True)
+    
+    generator = DiscreteLightGenerator()
+    generator.set_seed(random.randint(0, 10000))
+    generator.generate_lights(focus_object, active_cam)
+
+    if get_object_rotation_degrees(active_cam, 'x') + generator.max_cone_angle > 90.0:
+        print("Warning: Camera is looking too far downwards relative to light cone angle; lights may intersect the floor.")
