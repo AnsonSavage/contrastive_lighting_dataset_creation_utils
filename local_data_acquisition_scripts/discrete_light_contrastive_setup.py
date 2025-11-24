@@ -10,6 +10,9 @@ from camera_spawner import CameraSpawner
 from utils.random_utils import get_random_point_on_surface
 importlib.reload(sys.modules.get('camera_spawner'))
 importlib.reload(sys.modules.get('utils.random_utils'))
+import os
+import glob
+import argparse
 
 class DiscreteLightGenerator:
     def __init__(self, collection_name="Generated_Lighting", seed=21):
@@ -185,13 +188,12 @@ class DiscreteLightGenerator:
         if success and object == target_obj:
             return True
             
-        # 2. Check vertices
+        # 2. Check a subset of vertices to see if any of them are visible from the light
         if target_obj.type == 'MESH':
             mw = target_obj.matrix_world
             mesh = target_obj.data
             vertices = mesh.vertices
             
-            # Optimization: Check a subset of vertices
             step = max(1, len(vertices) // 50) 
             
             for i in range(0, len(vertices), step):
@@ -285,6 +287,84 @@ class ObjectLoader:
         
         # Restore cursor
         bpy.context.scene.cursor.location = saved_cursor_loc
+
+    def preprocess_object(self, imported_objects: list) -> bpy.types.Object:
+        """
+        Merges all imported mesh objects into a single object and sets the origin.
+        Returns the final merged object, or None if no mesh objects were provided.
+        """
+        if not imported_objects:
+            return None
+
+        # Filter to only mesh objects
+        mesh_objects = [obj for obj in imported_objects if obj.type == 'MESH']
+        if not mesh_objects:
+            print("Warning: No mesh objects to preprocess.")
+            return None
+
+        # Deselect all
+        bpy.ops.object.select_all(action='DESELECT')
+
+        # Select all mesh objects
+        for obj in mesh_objects:
+            obj.select_set(True)
+
+        # Set the first mesh as active (this will be the target for join)
+        bpy.context.view_layer.objects.active = mesh_objects[0]
+
+        # Join all selected mesh objects into one
+        if len(mesh_objects) > 1:
+            bpy.ops.object.join()
+
+        # The active object is now the merged result
+        merged_obj = bpy.context.view_layer.objects.active
+
+        # Scale the object to fit within a 1m x 1m x 1m bounding box (maintaining aspect ratio)
+        self.scale_to_fit(merged_obj, max_size=1.0)
+
+        # Set the origin
+        self.set_object_origin(merged_obj)
+
+        return merged_obj
+
+    def scale_to_fit(self, obj: bpy.types.Object, max_size: float = 1.0) -> None:
+        """
+        Scales the object uniformly so that its largest dimension fits within max_size,
+        maintaining aspect ratio.
+        """
+        if not obj:
+            return
+
+        # Force update to ensure bounding box is correct
+        bpy.context.view_layer.update()
+
+        # Calculate world space bounding box corners
+        bbox_corners = [obj.matrix_world @ Vector(corner) for corner in obj.bound_box]
+
+        min_x = min(v.x for v in bbox_corners)
+        max_x = max(v.x for v in bbox_corners)
+        min_y = min(v.y for v in bbox_corners)
+        max_y = max(v.y for v in bbox_corners)
+        min_z = min(v.z for v in bbox_corners)
+        max_z = max(v.z for v in bbox_corners)
+
+        size_x = max_x - min_x
+        size_y = max_y - min_y
+        size_z = max_z - min_z
+
+        largest_dim = max(size_x, size_y, size_z)
+
+        assert largest_dim > 0, "Object has zero or negative dimensions, cannot scale."
+
+        scale_factor = max_size / largest_dim
+
+        # Apply uniform scale
+        obj.scale *= scale_factor
+
+        # Apply the scale so it becomes part of the mesh data
+        bpy.context.view_layer.objects.active = obj
+        obj.select_set(True)
+        bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
     
 def get_object_rotation_degrees (obj: bpy.types.Object, axis:str) -> float:
     assert axis.lower() in ('x', 'y', 'z'), "Axis must be 'x', 'y', or 'z'"
@@ -297,24 +377,103 @@ def place_empty_at_location(location: Vector, name: str = "Empty") -> bpy.types.
     empty_obj.name = name
     return empty_obj
 
+
+def clear_collection_objects(collection_name: str):
+    """Remove all objects in the named collection (and their data if unused)."""
+    if collection_name in bpy.data.collections:
+        coll = bpy.data.collections[collection_name]
+        objs_to_remove = [obj for obj in coll.objects]
+        for obj in objs_to_remove:
+            try:
+                bpy.data.objects.remove(obj, do_unlink=True)
+            except Exception:
+                # best-effort removal
+                pass
+        # Optionally remove orphan data
+        # Blender will keep data-blocks until users==0
+        for mesh in list(bpy.data.meshes):
+            if mesh.users == 0:
+                try:
+                    bpy.data.meshes.remove(mesh)
+                except Exception:
+                    pass
+
+
+def ensure_collection(name: str) -> bpy.types.Collection:
+    if name in bpy.data.collections:
+        return bpy.data.collections[name]
+    coll = bpy.data.collections.new(name)
+    bpy.context.scene.collection.children.link(coll)
+    return coll
+
 if __name__ == "__main__":
-    focus_object = bpy.data.objects.get("focus_object")
+    # Parse Blender CLI args (everything after '--') using argparse
+    raw_argv = sys.argv
+    if '--' in raw_argv:
+        raw_argv = raw_argv[raw_argv.index('--') + 1:]
+    else:
+        raw_argv = []
+
+    parser = argparse.ArgumentParser(description="Discrete light contrastive setup")
+    parser.add_argument('folder', nargs='?', default=None, help='Path to folder containing focus object files')
+    args = parser.parse_args(raw_argv)
+
+    # folder_arg = args.folder
+    folder_arg = r'C:\Users\yaboy\Downloads\test_set_of_glb_files' # TODO: replace this with args.folder for actual usage
+
     active_cam = bpy.context.scene.camera
 
     object_loader = ObjectLoader()
-    object_loader.set_object_origin(focus_object)
 
-    plane_to_scatter_on = bpy.data.objects.get("scatter_plane")
-    random_point_on_plane = get_random_point_on_surface(plane_to_scatter_on)
-    
-    # Set the focus object's location to the random point on the plane
-    focus_object.location = random_point_on_plane
-    # Randomly rotate around the z axis
-    focus_object.rotation_euler.z = random.uniform(0, 2 * math.pi)
+    focus_object = None
 
-    camera_spawner = CameraSpawner("look_from_volume", focus_object.name, active_cam.name, use_look_at_volume_exact_location=True)
-    camera_spawner.update(random.randint(0, 10000), restore_hidden_state=True)
-    
-    generator = DiscreteLightGenerator()
-    generator.set_seed(random.randint(0, 10000))
-    generator.generate_lights(focus_object, active_cam)
+    # If a folder is provided, pick a random compatible model and import it
+    if folder_arg:
+        if os.path.isdir(folder_arg):
+            clear_collection_objects('Focus_Objects')
+            supported = ('.glb', '.gltf', '.fbx')
+            files = [f for f in os.listdir(folder_arg) if f.lower().endswith(supported)]
+            print(f"Found {len(files)} compatible files in folder: {folder_arg}", flush=True)
+            print("Files:", files, flush=True)
+            if not files:
+                print(f"No compatible files found. Supported: {supported}")
+            else:
+                chosen = random.choice(files)
+                chosen_path = os.path.join(folder_arg, chosen)
+                print(f"Importing focus object: {chosen_path}")
+                imported_obj = object_loader.import_object(chosen_path)
+
+                # Get all selected objects (the import selects them)
+                imported_objects = list(bpy.context.selected_objects)
+
+                coll = ensure_collection('Focus_Objects')
+                # Move imported (selected) objects into the Focus_Objects collection
+                for obj in imported_objects:
+                    try:
+                        if obj.name not in coll.objects:
+                            coll.objects.link(obj)
+                    except Exception:
+                        pass
+
+                # Merge all imported meshes into one and set origin
+                focus_object = object_loader.preprocess_object(imported_objects)
+        else:
+            print(f"Provided folder path does not exist: {folder_arg}")
+
+    if not focus_object:
+        print("Error: No focus object found or imported. Exiting.")
+    else:
+        plane_to_scatter_on = bpy.data.objects.get("scatter_plane")
+        random_point_on_plane = get_random_point_on_surface(plane_to_scatter_on)
+        
+        # Set the focus object's location to the random point on the plane
+        focus_object.location = random_point_on_plane
+        # Randomly rotate around the z axis
+        focus_object.rotation_euler.z = random.uniform(0, 2 * math.pi)
+
+        # camera_spawner = CameraSpawner("look_from_volume", focus_object.name, active_cam.name, use_look_at_volume_exact_location=True)
+        # camera_spawner.update(random.randint(0, 10000), restore_hidden_state=True)
+        
+        # generator = DiscreteLightGenerator()
+        # generator.set_seed(random.randint(0, 10000))
+        # generator.generate_lights(focus_object, active_cam)
