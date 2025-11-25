@@ -347,14 +347,14 @@ class ObjectLoader:
         merged_obj = bpy.context.view_layer.objects.active
 
         # Scale the object to fit within a 1m x 1m x 1m bounding box (maintaining aspect ratio)
-        self.scale_to_fit(merged_obj, max_size=1.0)
+        self.scale_to_fit(merged_obj, size_of_max_dim=2.0)
 
         # Set the origin
         self.set_object_origin(merged_obj)
 
         return merged_obj
 
-    def scale_to_fit(self, obj: bpy.types.Object, max_size: float = 1.0) -> None:
+    def scale_to_fit(self, obj: bpy.types.Object, size_of_max_dim: float = 2.0) -> None:
         """
         Scales the object uniformly so that its largest dimension fits within max_size,
         maintaining aspect ratio.
@@ -383,7 +383,7 @@ class ObjectLoader:
 
         assert largest_dim > 0, "Object has zero or negative dimensions, cannot scale."
 
-        scale_factor = max_size / largest_dim
+        scale_factor = size_of_max_dim / largest_dim
 
         # Apply uniform scale
         obj.scale *= scale_factor
@@ -392,6 +392,93 @@ class ObjectLoader:
         bpy.context.view_layer.objects.active = obj
         obj.select_set(True)
         bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+
+
+class ObjectScatterer:
+    """Handles random placement and rotation of objects on a surface."""
+    
+    def __init__(self, scatter_plane_name: str = "scatter_plane", seed: int = None, min_distance: float = 1.5):
+        self.scatter_plane_name = scatter_plane_name
+        self.seed = seed
+        self.min_distance = min_distance
+        self.placed_positions: list[Vector] = []
+        if seed is not None:
+            self.rng = random.Random(seed)
+        else:
+            self.rng = random
+    
+    def _is_valid_position(self, pos: Vector) -> bool:
+        """Check if a position is far enough from all previously placed objects."""
+        for placed_pos in self.placed_positions:
+            dist = (pos - placed_pos).length
+            if dist < self.min_distance:
+                return False
+        return True
+    
+    def _get_random_point_with_spacing(self, plane, max_attempts: int = 50) -> Vector:
+        """Get a random point that respects minimum distance from other objects."""
+        for _ in range(max_attempts):
+            if plane:
+                random_point = get_random_point_on_surface(plane)
+            else:
+                # Fallback: random point in a 10x10 area
+                random_point = Vector((
+                    self.rng.uniform(-5, 5),
+                    self.rng.uniform(-5, 5),
+                    0
+                ))
+            
+            if self._is_valid_position(random_point):
+                return random_point
+        
+        # If we couldn't find a valid position, just return the last attempt
+        print(f"Warning: Could not find position with min_distance={self.min_distance} after {max_attempts} attempts.")
+        return random_point
+    
+    def scatter_and_rotate(self, obj: bpy.types.Object) -> None:
+        """Places object at a random point on the scatter plane and applies random Z rotation."""
+        if not obj:
+            print("Warning: No object provided to scatter.")
+            return
+        
+        # Get scatter plane
+        plane = bpy.data.objects.get(self.scatter_plane_name)
+        if not plane:
+            print(f"Warning: Scatter plane '{self.scatter_plane_name}' not found. Using random area.")
+        
+        # Get position with spacing
+        random_point = self._get_random_point_with_spacing(plane)
+        
+        # Set location
+        obj.location = random_point
+        self.placed_positions.append(random_point.copy())
+        
+        # Apply random Z rotation
+        rand_angle = self.rng.uniform(0, 2 * math.pi)
+        
+        if obj.rotation_mode == 'XYZ':
+            obj.rotation_euler.z = rand_angle
+        elif obj.rotation_mode == 'QUATERNION':
+            quat_rot = Euler((0, 0, rand_angle), 'XYZ').to_quaternion()
+            obj.rotation_quaternion = quat_rot @ obj.rotation_quaternion
+        else:
+            # Fallback to Euler
+            obj.rotation_mode = 'XYZ'
+            obj.rotation_euler.z = rand_angle
+    
+    def scatter_multiple(self, objects: list) -> None:
+        """Scatter multiple objects, ensuring minimum distance between them."""
+        for obj in objects:
+            self.scatter_and_rotate(obj)
+    
+    def reset_positions(self):
+        """Clear the list of placed positions."""
+        self.placed_positions.clear()
+    
+    def set_seed(self, new_seed: int):
+        """Update the random seed."""
+        self.seed = new_seed
+        self.rng = random.Random(new_seed)
     
 def get_object_rotation_degrees (obj: bpy.types.Object, axis:str) -> float:
     assert axis.lower() in ('x', 'y', 'z'), "Axis must be 'x', 'y', or 'z'"
@@ -443,6 +530,8 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Discrete light contrastive setup")
     parser.add_argument('folder', nargs='?', default=None, help='Path to folder containing focus object files')
+    parser.add_argument('-n', '--num-objects', type=int, default=3, help='Number of objects to import and scatter (default: 3)')
+    parser.add_argument('--min-distance', type=float, default=1.5, help='Minimum distance between scattered objects (default: 1.5)')
     args = parser.parse_args(raw_argv)
 
     # folder_arg = args.folder
@@ -453,54 +542,69 @@ if __name__ == "__main__":
     object_loader = ObjectLoader()
 
     focus_object = None
+    all_scene_objects = []  # All imported objects for scattering
 
-    # If a folder is provided, pick a random compatible model and import it
+    # If a folder is provided, import n random models
     if folder_arg:
         if os.path.isdir(folder_arg):
             clear_collection_objects('Focus_Objects')
             supported = ('.glb', '.gltf', '.fbx')
             files = [f for f in os.listdir(folder_arg) if f.lower().endswith(supported)]
             print(f"Found {len(files)} compatible files in folder: {folder_arg}", flush=True)
-            print("Files:", files, flush=True)
+            
             if not files:
                 print(f"No compatible files found. Supported: {supported}")
             else:
-                chosen = random.choice(files)
-                chosen_path = os.path.join(folder_arg, chosen)
-                print(f"Importing focus object: {chosen_path}")
-                imported_obj = object_loader.import_object(chosen_path)
-
-                # Get all selected objects (the import selects them)
-                imported_objects = list(bpy.context.selected_objects)
-
+                # Select n random files (with replacement if needed)
+                num_to_import = args.num_objects
+                if len(files) >= num_to_import:
+                    chosen_files = random.sample(files, num_to_import)
+                else:
+                    # If fewer files than requested, use replacement
+                    chosen_files = [random.choice(files) for _ in range(num_to_import)]
+                
+                print(f"Importing {len(chosen_files)} objects...")
+                
                 coll = ensure_collection('Focus_Objects')
-                # Move imported (selected) objects into the Focus_Objects collection
-                for obj in imported_objects:
-                    try:
-                        if obj.name not in coll.objects:
-                            coll.objects.link(obj)
-                    except Exception:
-                        pass
-
-                # Merge all imported meshes into one and set origin
-                focus_object = object_loader.preprocess_object(imported_objects)
+                
+                for i, chosen in enumerate(chosen_files):
+                    chosen_path = os.path.join(folder_arg, chosen)
+                    print(f"Importing object {i+1}/{len(chosen_files)}: {chosen_path}")
+                    
+                    imported_obj = object_loader.import_object(chosen_path)
+                    imported_objects = list(bpy.context.selected_objects)
+                    
+                    # Move imported objects into the Focus_Objects collection
+                    for obj in imported_objects:
+                        try:
+                            if obj.name not in coll.objects:
+                                coll.objects.link(obj)
+                        except Exception:
+                            pass
+                    
+                    # Preprocess (merge, scale, set origin)
+                    processed_obj = object_loader.preprocess_object(imported_objects)
+                    
+                    if processed_obj:
+                        all_scene_objects.append(processed_obj)
+                
+                # Select one object to be the focus object
+                if all_scene_objects:
+                    focus_object = random.choice(all_scene_objects)
+                    print(f"Selected focus object: {focus_object.name}")
         else:
             print(f"Provided folder path does not exist: {folder_arg}")
 
     if not focus_object:
         print("Error: No focus object found or imported. Exiting.")
     else:
-        plane_to_scatter_on = bpy.data.objects.get("scatter_plane")
-        random_point_on_plane = get_random_point_on_surface(plane_to_scatter_on)
-        
-        # Set the focus object's location to the random point on the plane
-        focus_object.location = random_point_on_plane
-        # Randomly rotate around the z axis
-        focus_object.rotation_euler.z = random.uniform(0, 2 * math.pi)
+        # Scatter all objects (including focus) with minimum distance between them
+        scatterer = ObjectScatterer("scatter_plane", seed=random.randint(0, 10000), min_distance=args.min_distance)
+        scatterer.scatter_multiple(all_scene_objects)
 
-        # camera_spawner = CameraSpawner("look_from_volume", focus_object.name, active_cam.name, use_look_at_volume_exact_location=True)
-        # camera_spawner.update(random.randint(0, 10000), restore_hidden_state=True)
+        camera_spawner = CameraSpawner("look_from_volume", focus_object.name, active_cam.name, use_look_at_volume_exact_location=True)
+        camera_spawner.update(random.randint(0, 10000), restore_hidden_state=True)
         
-        # generator = DiscreteLightGenerator()
-        # generator.set_seed(random.randint(0, 10000))
-        # generator.generate_lights(focus_object, active_cam)
+        generator = DiscreteLightGenerator()
+        generator.set_seed(random.randint(0, 10000))
+        generator.generate_lights(focus_object, active_cam)
