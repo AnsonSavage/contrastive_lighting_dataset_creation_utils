@@ -28,13 +28,15 @@ class ObjectLoader:
             
         return active_obj
     
-    def set_object_origin(self, obj: bpy.types.Object) -> None:
+    def set_object_origin(self, obj: bpy.types.Object, use_bbox_z='MIN') -> None:
         """
         Sets the object origin such that x and y are the center of the bounding box 
         and z is the min of the bounding box.
         """
         if not obj:
             return
+        
+        assert use_bbox_z in ('MIN', 'CENTER', 'MAX'), "use_bbox_z must be one of 'MIN', 'CENTER', or 'MAX'"
 
         # Ensure the object is active and selected
         bpy.context.view_layer.objects.active = obj
@@ -51,15 +53,22 @@ class ObjectLoader:
         min_y = min([v.y for v in bbox_corners])
         max_y = max([v.y for v in bbox_corners])
         min_z = min([v.z for v in bbox_corners])
+        max_z = max([v.z for v in bbox_corners])
         
         center_x = (min_x + max_x) / 2
         center_y = (min_y + max_y) / 2
-        bottom_z = min_z
+        # Switch statement for z
+        if use_bbox_z == 'MIN':
+            z = min_z
+        elif use_bbox_z == 'CENTER':
+            z = (min_z + max_z) / 2
+        else:  # 'MAX'
+            z = max_z
         
         # Use the 3D cursor to set the origin
         saved_cursor_loc = bpy.context.scene.cursor.location.copy()
         
-        bpy.context.scene.cursor.location = Vector((center_x, center_y, bottom_z))
+        bpy.context.scene.cursor.location = Vector((center_x, center_y, z))
         
         # Set origin to cursor
         bpy.ops.object.origin_set(type='ORIGIN_CURSOR')
