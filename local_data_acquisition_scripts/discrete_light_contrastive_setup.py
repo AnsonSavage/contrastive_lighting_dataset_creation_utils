@@ -91,10 +91,10 @@ if __name__ == "__main__":
     if not focus_object:
         print("Error: No focus object found or imported. Exiting.")
     else:
-        object_loader.set_object_origin(focus_object, use_bbox_z='MAX')
         # Scatter all objects (including focus) with minimum distance between them
         scatterer = ObjectScatterer("scatter_plane", seed=random.randint(0, 10000), min_distance=args.min_distance)
         scatterer.scatter_multiple(all_scene_objects)
+        object_loader.set_object_origin(focus_object, use_bbox_z='MAX', origin_offset = (0, 0, -0.2))
 
         camera_spawner = CameraSpawner("look_from_volume", focus_object.name, active_cam.name, use_look_at_volume_exact_location=True)
         camera_spawner.update(random.randint(0, 10000), restore_hidden_state=True)
@@ -112,5 +112,5 @@ if __name__ == "__main__":
             print(f"Warning: failed to set camera focus: {e}")
         
         generator = DiscreteLightGenerator()
-        generator.set_seed(random.randint(0, 10000))
+        generator.set_seed(6429) # random.randint(0, 10000))
         generator.generate_lights(focus_object, active_cam)

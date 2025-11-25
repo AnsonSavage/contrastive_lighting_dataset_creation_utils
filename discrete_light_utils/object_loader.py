@@ -28,7 +28,7 @@ class ObjectLoader:
             
         return active_obj
     
-    def set_object_origin(self, obj: bpy.types.Object, use_bbox_z='MIN') -> None:
+    def set_object_origin(self, obj: bpy.types.Object, use_bbox_z='MIN', origin_offset = (0, 0, 0)) -> None:
         """
         Sets the object origin such that x and y are the center of the bounding box 
         and z is the min of the bounding box.
@@ -68,7 +68,7 @@ class ObjectLoader:
         # Use the 3D cursor to set the origin
         saved_cursor_loc = bpy.context.scene.cursor.location.copy()
         
-        bpy.context.scene.cursor.location = Vector((center_x, center_y, z))
+        bpy.context.scene.cursor.location = Vector((center_x, center_y, z)) + Vector(origin_offset)
         
         # Set origin to cursor
         bpy.ops.object.origin_set(type='ORIGIN_CURSOR')
