@@ -290,7 +290,8 @@ class ObjectLoader:
 
     def preprocess_object(self, imported_objects: list) -> bpy.types.Object:
         """
-        Merges all imported mesh objects into a single object and sets the origin.
+        Merges all imported mesh objects into a single object, removes non-mesh objects
+        (empties, armatures, etc.), scales to fit 1m box, and sets the origin.
         Returns the final merged object, or None if no mesh objects were provided.
         """
         if not imported_objects:
@@ -298,21 +299,47 @@ class ObjectLoader:
 
         # Filter to only mesh objects
         mesh_objects = [obj for obj in imported_objects if obj.type == 'MESH']
+        non_mesh_objects = [obj for obj in imported_objects if obj.type != 'MESH']
+
         if not mesh_objects:
             print("Warning: No mesh objects to preprocess.")
+            # Still clean up non-mesh objects
+            for obj in non_mesh_objects:
+                try:
+                    bpy.data.objects.remove(obj, do_unlink=True)
+                except Exception:
+                    pass
             return None
 
-        # Deselect all
-        bpy.ops.object.select_all(action='DESELECT')
+        # 1. Clear parenting on mesh objects (keep transforms) BEFORE deleting parents
+        for obj in mesh_objects:
+            if obj.parent:
+                # Store world matrix before clearing parent
+                world_matrix = obj.matrix_world.copy()
+                obj.parent = None
+                obj.matrix_world = world_matrix
 
-        # Select all mesh objects
+        # 2. Apply all transforms (Location, Rotation, Scale) to bake them into the mesh
+        bpy.ops.object.select_all(action='DESELECT')
         for obj in mesh_objects:
             obj.select_set(True)
+        
+        if mesh_objects:
+            bpy.context.view_layer.objects.active = mesh_objects[0]
+            bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
 
-        # Set the first mesh as active (this will be the target for join)
-        bpy.context.view_layer.objects.active = mesh_objects[0]
+        # 3. Remove all non-mesh objects (empties, armatures, etc.)
+        for obj in non_mesh_objects:
+            try:
+                bpy.data.objects.remove(obj, do_unlink=True)
+            except Exception:
+                pass
 
-        # Join all selected mesh objects into one
+        # 4. Join all selected mesh objects into one
+        # (Objects are already selected from step 2)
+        if mesh_objects:
+            bpy.context.view_layer.objects.active = mesh_objects[0]
+
         if len(mesh_objects) > 1:
             bpy.ops.object.join()
 
