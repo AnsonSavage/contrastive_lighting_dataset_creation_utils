@@ -2,3 +2,4 @@
 from .discrete_light_generator import DiscreteLightGenerator
 from .object_loader import ObjectLoader
 from .object_scatterer import ObjectScatterer
+from .object_selector import ObjectSelector
