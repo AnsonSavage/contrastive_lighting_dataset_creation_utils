@@ -11,7 +11,7 @@ class ObjectSelector:
 
     def _get_all_files(self):
         if not os.path.isdir(self.directory):
-            return []
+            raise ValueError(f"Directory {self.directory} does not exist.")
         return [f for f in os.listdir(self.directory) if f.lower().endswith(self.supported_extensions)]
 
     def get_valid_files(self):
