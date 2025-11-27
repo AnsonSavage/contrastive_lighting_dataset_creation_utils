@@ -109,8 +109,47 @@ class DiscreteLightGenerator:
             light_collection = bpy.data.collections[self.collection_name]
         return light_collection
 
+    def randomize_background(self):
+        world = bpy.context.scene.world
+        if not world:
+            world = bpy.data.worlds.new("World")
+            bpy.context.scene.world = world
+        
+        world.use_nodes = True
+        bg_node = world.node_tree.nodes.get('Background')
+        
+        if not bg_node:
+            # Try to find it by type if name is different
+            for node in world.node_tree.nodes:
+                if node.type == 'BACKGROUND':
+                    bg_node = node
+                    break
+        
+        if not bg_node:
+            bg_node = world.node_tree.nodes.new(type='ShaderNodeBackground')
+            output_node = world.node_tree.nodes.get('World Output')
+            if not output_node:
+                output_node = world.node_tree.nodes.new(type='ShaderNodeOutputWorld')
+            world.node_tree.links.new(bg_node.outputs['Background'], output_node.inputs['Surface'])
+
+        # Randomize Color
+        # Hue: Random
+        # Saturation: Very limited (0.0 - 0.3)
+        # Value: Not too bright (0.05 - 0.3)
+        h = self.rng.random()
+        s = self.rng.uniform(0.0, 0.3)
+        v = self.rng.uniform(0.05, 0.4)
+        color_rgb = self.hsv_to_rgb(h, s, v)
+        
+        bg_node.inputs['Color'].default_value = (*color_rgb, 1.0) # RGBA
+        
+        # Randomize Strength
+        strength = self.rng.uniform(0.1, 0.5)
+        bg_node.inputs['Strength'].default_value = strength
+
     def generate_light_configuration_from_seed(self):
         self.clear_previous_lights()
+        self.randomize_background()
         light_collection = self._get_light_collection()
         num_lights = self.rng.randint(self.min_lights, self.max_lights)
 
