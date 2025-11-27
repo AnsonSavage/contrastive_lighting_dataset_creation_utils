@@ -95,8 +95,10 @@ class DiscreteLightGenerator:
         matrix_to_align_camera_with_y_axis = self.get_matrix_to_align_with_camera_looking_down_y_axis(camera)
         rotation_matrix_4x4 = matrix_to_align_camera_with_y_axis.to_4x4()
         for light_obj in self.light_objects:
+            current_matrix = Matrix.Translation(light_obj.location) @ light_obj.rotation_euler.to_matrix().to_4x4() # This is a more efficient alternative to view_layer.update() followed by light_obj.matrix_world
+            
             # Rotate the light object around the world origin using the matrix
-            light_obj.matrix_world = rotation_matrix_4x4 @ light_obj.matrix_world
+            light_obj.matrix_world = rotation_matrix_4x4 @ current_matrix
     
     def _get_light_collection(self) -> bpy.types.Collection:
         # Create Collection
