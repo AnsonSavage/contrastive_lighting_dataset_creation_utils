@@ -1,30 +1,82 @@
 import os
 import random
 import bpy
+from .object_loader import ObjectLoader
+from utils.bbox_utils import get_bbox_extrema
 
 class ObjectSelector:
-    def __init__(self, directory: str):
+    def __init__(self, directory: str, object_loader: ObjectLoader, min_height: float = 0.5, max_file_size_mb: float = 50.0):
+        self.min_height = min_height
+        self.max_file_size_mb = max_file_size_mb
         self.directory = directory
         self.supported_extensions = ('.glb', '.gltf', '.fbx')
         self.all_files = self._get_all_files()
         self.invalid_files = set()
+        self.object_loader = object_loader
 
     def _get_all_files(self):
         if not os.path.isdir(self.directory):
             raise ValueError(f"Directory {self.directory} does not exist.")
-        return [f for f in os.listdir(self.directory) if f.lower().endswith(self.supported_extensions)]
+        return [f for f in os.listdir(self.directory) if f.lower().endswith(self.supported_extensions) and os.path.getsize(os.path.join(self.directory, f)) <= self.max_file_size_mb * 1024 * 1024]
 
     def get_valid_files(self):
         return list(set(self.all_files) - self.invalid_files)
 
-    def select_random_file(self):
-        valid_files = self.get_valid_files()
-        if not valid_files:
-            return None
-        return random.choice(valid_files)
+    def load_object(self, max_attempts: int = 50) -> bpy.types.Object:
+        """
+        Loads and validates a random object from the directory.
+        Marks invalid objects and retries until a valid one is found.
+        """
+        attempts = 0
+        while attempts < max_attempts:
+            attempts += 1
+            valid_files = self.get_valid_files()
+            if not valid_files:
+                raise RuntimeError("No valid files available to load.")
 
-    def mark_invalid(self, filename: str):
-        self.invalid_files.add(filename)
+            candidate_filename = random.choice(valid_files)
+            candidate_filepath = os.path.join(self.directory, candidate_filename)
+            
+            # Import the object(s)
+            imported_objects = self.object_loader.import_object(candidate_filepath)
+            
+            # Preprocess (merges, cleans up, returns single object or None)
+            candidate_object = self.object_loader.preprocess_objects(imported_objects)
+            
+            if candidate_object and self.selected_object_validation(candidate_object):
+                return candidate_object
+            
+            print(f"Object '{candidate_filename}' failed validation. Marking as invalid and retrying.", flush=True)
+            
+            # If we have a candidate object (validation failed), remove it.
+            # If candidate_object is None (preprocess failed), it cleaned itself up.
+            if candidate_object:
+                bpy.data.objects.remove(candidate_object, do_unlink=True)
+                
+            self.invalid_files.add(candidate_filename)
+        
+        raise RuntimeError(f"Failed to find a valid object after {max_attempts} attempts.")
+            
+    def selected_object_validation(self, obj: bpy.types.Object) -> bool:
+        """
+        Validates the selected object
+        """
+        return self.is_sufficiently_tall(obj) and not self.is_emissive(obj)  # Add more validation checks as needed
+
+    def is_sufficiently_tall(self, obj: bpy.types.Object) -> bool:
+        """
+        Checks if the object's bounding box height is above a certain threshold (after object has been scaled, of course)
+        """
+        if not obj:
+            return False
+        
+        min_bound, max_bound = get_bbox_extrema(obj)
+        height = max_bound.z - min_bound.z
+        
+        passed = height >= self.min_height
+        if not passed:
+            print(f"Object '{obj.name}' height {height:.2f} is below minimum required height {self.min_height}.", flush=True)
+        return passed
 
     def is_emissive(self, obj: bpy.types.Object) -> bool:
         """

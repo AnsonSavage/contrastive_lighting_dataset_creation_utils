@@ -1,6 +1,5 @@
 import bpy
 import random
-import math
 import sys
 import os
 import argparse
@@ -20,6 +19,11 @@ importlib.reload(sys.modules['discrete_light_utils'])
 importlib.reload(sys.modules['camera_spawner'])
 importlib.reload(sys.modules['discrete_light_utils.collection_utils'])
 
+SCATTER_SURFACE_NAME = "scatter_surface"
+CAMERA_NAME = "procedural_camera"
+LOOK_FROM_VOLUME_NAME = "look_from_volume"
+FOCUS_OBJECT_NAME = "focus_object"
+
 
 if __name__ == "__main__":
     # Parse Blender CLI args (everything after '--') using argparse
@@ -30,114 +34,85 @@ if __name__ == "__main__":
         raw_argv = []
 
     parser = argparse.ArgumentParser(description="Discrete light contrastive setup")
-    parser.add_argument('folder', nargs='?', default=None, help='Path to folder containing focus object files')
+    parser.add_argument('folder', nargs='?', default=r'C:\Users\yaboy\Downloads\test_set_of_glb_files', help='Path to folder containing focus object files') # TODO: change default to None so that this arg is required
     parser.add_argument('-n', '--num-objects', type=int, default=3, help='Number of objects to import and scatter (default: 3)')
     parser.add_argument('--min-distance', type=float, default=1.5, help='Minimum distance between scattered objects (default: 1.5)')
+    parser.add_argument('--max-object-dimension', type=float, default=2, help='The size of the maximum dimension of imported objects after scaling (default: 2)')
+    parser.add_argument('--lighting-seed', type=int, default=None, help='Random seed for discrete lighting generation (default: random)')
+    parser.add_argument('--max-camera-attempts', type=int, default=20, help='Maximum attempts to place camera with visible lights (default: 100)')
+    parser.add_argument('--max-camera-distance', type=float, default=10.0, help='Maximum distance of the camera from the focus object (default: 10.0)')
     args = parser.parse_args(raw_argv)
+    folder_arg = args.folder
+    lighting_seed = args.lighting_seed if args.lighting_seed is not None else random.randint(0, 10000)
+    max_camera_placement_attempts = args.max_camera_attempts
+    max_camera_distance = args.max_camera_distance
+    camera_seed = random.randint(0, 10000)
+    scatter_seed = random.randint(0, 10000)
+    print(f"Using lighting seed: {lighting_seed}", flush=True)
 
-    # folder_arg = args.folder
-    folder_arg = r'C:\Users\yaboy\Downloads\test_set_of_glb_files' # TODO: replace this with args.folder for actual usage
+    # Generate a lighting configuration based on the seed
+    discrete_light_generator = DiscreteLightGenerator(seed=lighting_seed)
+    discrete_light_generator.generate_light_configuration_from_seed()
 
-    active_cam = bpy.context.scene.camera
-
+    # Place a focus object
+    clear_collection_objects('Focus_Objects') # TODO: this could probably move the unused objects into an unused collection, unless the likelihood of selecting the same object again is too low... 
     object_loader = ObjectLoader()
+    object_selector = ObjectSelector(folder_arg, object_loader, max_file_size_mb=20)
+    focus_object = object_selector.load_object()
+    focus_object.name = FOCUS_OBJECT_NAME
+    focus_objects_collection = ensure_collection('Focus_Objects')
+    focus_objects_collection.objects.link(focus_object)
+    object_scatterer = ObjectScatterer(scatter_plane_name=SCATTER_SURFACE_NAME, seed=scatter_seed, min_distance=args.min_distance)
+    
 
-    focus_object = None
-    all_imported_objects = []  # All imported objects for scattering
+    camera_and_object_placement_good = False
+    object_placement_attempts = 0
+    max_object_placement_attempts = 20
 
-    # If a folder is provided, import n random models
-    if folder_arg:
-        if os.path.isdir(folder_arg):
-            clear_collection_objects('Focus_Objects')
-            
-            object_selector = ObjectSelector(folder_arg)
-            print(f"Found {len(object_selector.all_files)} compatible files in folder: {folder_arg}", flush=True)
-            
-            if not object_selector.all_files:
-                print(f"No compatible files found. Supported: {object_selector.supported_extensions}")
-            else:
-                num_to_import = args.num_objects
-                focus_objects_collection = ensure_collection('Focus_Objects')
-                
-                print(f"Attempting to import {num_to_import} valid objects...")
-                
-                selected_filenames = set()
-                
-                while len(all_imported_objects) < num_to_import:
-                    # Try to pick a file that hasn't been selected yet, unless we have to
-                    valid_files = object_selector.get_valid_files()
-                    available_files = list(set(valid_files) - selected_filenames)
-                    
-                    if not available_files:
-                        # If we ran out of unique files, allow reuse if we have any valid files
-                        if not valid_files:
-                            print("No valid files left.")
-                            break
-                        chosen = random.choice(valid_files)
-                    else:
-                        chosen = random.choice(available_files)
-                        
-                    chosen_path = os.path.join(folder_arg, chosen)
-                    print(f"Importing object {len(all_imported_objects)+1}/{num_to_import}: {chosen_path}")
-                    
-                    imported_obj = object_loader.import_object(chosen_path)
-                    imported_objects = list(bpy.context.selected_objects)
-                    
-                    # Preprocess (merge, scale, set origin)
-                    processed_obj = object_loader.preprocess_object(imported_objects)
-                    
-                    if processed_obj:
-                        # Check for emissive materials
-                        if object_selector.is_emissive(processed_obj):
-                            print(f"Object {chosen} has emissive materials. Marking invalid and removing.")
-                            object_selector.mark_invalid(chosen)
-                            bpy.data.objects.remove(processed_obj, do_unlink=True)
-                            continue
-                        
-                        # Move imported objects into the Focus_Objects collection
-                        try:
-                            if processed_obj.name not in focus_objects_collection.objects:
-                                focus_objects_collection.objects.link(processed_obj)
-                        except Exception:
-                            pass
-                            
-                        all_imported_objects.append(processed_obj)
-                        selected_filenames.add(chosen)
-                    else:
-                        print(f"Failed to process object {chosen}.")
-                        # If preprocessing failed (e.g. no mesh), mark as invalid so we don't try again
-                        object_selector.mark_invalid(chosen)
-                
-                # Select one object to be the focus object
-                if all_imported_objects:
-                    focus_object = random.choice(all_imported_objects)
-                    print(f"Selected focus object: {focus_object.name}")
-        else:
-            print(f"Provided folder path does not exist: {folder_arg}")
+    while not camera_and_object_placement_good:
+        object_placement_attempts += 1
+        if object_placement_attempts > max_object_placement_attempts:
+            raise RuntimeError(f"Failed to find a valid camera and object placement after {max_object_placement_attempts} attempts.")
 
-    if not focus_object:
-        print("Error: No focus object found or imported. Exiting.")
-    else:
-        # Scatter all objects (including focus) with minimum distance between them
-        scatterer = ObjectScatterer("scatter_plane", seed=random.randint(0, 10000), min_distance=args.min_distance)
-        scatterer.scatter_multiple(all_imported_objects)
+        object_loader.set_object_origin(focus_object)
+        object_scatterer.scatter_and_rotate(focus_object)
         object_loader.set_object_origin(focus_object, use_bbox_z='MAX', origin_offset = (0, 0, -0.2))
 
-        camera_spawner = CameraSpawner("look_from_volume", focus_object.name, active_cam.name, use_look_at_volume_exact_location=True)
-        camera_spawner.update(random.randint(0, 10000), restore_hidden_state=True)
+        # Place the camera in a valid location
+        camera = bpy.data.objects.get(CAMERA_NAME)
+        camera_spawner = CameraSpawner(LOOK_FROM_VOLUME_NAME, FOCUS_OBJECT_NAME, camera.name, use_look_at_volume_exact_location=True)
+        camera_placement_attempts = 0
+        while camera_placement_attempts < max_camera_placement_attempts:
+            def pass_criteria(look_from, look_at):
+                # Ensure the camera is at least 1 unit away from the focus object
+                distance = (look_from - look_at).length
+                return distance >= 1.0 and distance <= max_camera_distance
+            # camera_spawner.update(update_seed=camera_seed, pass_criteria=pass_criteria, restore_hidden_state=True) # Place the camera where it can see the focus object
+            camera_spawner.update(update_seed=camera_seed, pass_criteria=pass_criteria, required_visible_target_name=FOCUS_OBJECT_NAME, restore_hidden_state=True) # Place the camera where it can see the focus object
+            discrete_light_generator.align_lighting_configuration_to_camera(camera)
+            discrete_light_generator.align_lighting_configuration_to_target_object(focus_object)
+            if discrete_light_generator.verify_lighting_visible_to_target(focus_object):
+                camera_and_object_placement_good = True
+                break
+            print("Regenerating camera position to ensure lights are visible to focus object...", flush=True)
+            camera_seed += 1  # Change seed to get a new camera position
+            camera_placement_attempts += 1
+    
+        if camera_placement_attempts >= max_camera_placement_attempts:
+            print(f"Failed to place camera with visible lights after {max_camera_placement_attempts} attempts. Retrying with new focus object placement...", flush=True)
+            continue # Retry placing the focus object and camera
+    
+    # Successfully placed camera and focus object with visible lights
 
-        # Ensure the camera's depth-of-field is focused on the selected focus object
-        try:
-            if active_cam and active_cam.type == 'CAMERA':
-                active_cam.data.dof.use_dof = True
-                active_cam.data.dof.focus_object = focus_object
-                # set a reasonably large aperture (small f-stop) for visible DOF if supported
-                if hasattr(active_cam.data.dof, 'aperture_fstop'):
-                    active_cam.data.dof.aperture_fstop = 0.5
-                print(f"Set camera '{active_cam.name}' focus to object '{focus_object.name}'")
-        except Exception as e:
-            print(f"Warning: failed to set camera focus: {e}")
+    # Set camera's focus distance to the focus object
+    camera.data.dof.use_dof = True
+    camera.data.dof.focus_object = focus_object
+    camera.data.dof.aperture_fstop = 0.5  # Example f
         
-        generator = DiscreteLightGenerator()
-        generator.set_seed(6429) # random.randint(0, 10000))
-        generator.generate_lights(focus_object, active_cam)
+
+    # If a folder is provided, import n random models
+    assert folder_arg is not None, "Error: No folder path provided for object import."
+    assert os.path.exists(folder_arg), f"Error: Provided folder path does not exist: {folder_arg}"
+
+    
+    

@@ -1,10 +1,11 @@
 import bpy
 from mathutils import Vector
+from utils.bbox_utils import get_bbox_extrema
 
 
 class ObjectLoader:
-    def import_object(self, path_to_object: str) -> bpy.types.Object:
-        """Loads a glb/fbx model into the scene and returns the active object."""
+    def import_object(self, path_to_object: str) -> list[bpy.types.Object]:
+        """Loads a glb/fbx model into the scene and returns all imported objects."""
         # Deselect all objects first to identify the new ones
         bpy.ops.object.select_all(action='DESELECT')
 
@@ -15,18 +16,13 @@ class ObjectLoader:
         else:
             raise ValueError(f"Unsupported file type: {path_to_object}")
         
-        # The imported objects are selected. Get the active one.
+        # The imported objects are selected.
         selected_objects = bpy.context.selected_objects
         if not selected_objects:
             print("Warning: No objects were imported.")
-            return None
+            return []
             
-        active_obj = bpy.context.view_layer.objects.active
-        if not active_obj and selected_objects:
-            active_obj = selected_objects[0]
-            bpy.context.view_layer.objects.active = active_obj
-            
-        return active_obj
+        return selected_objects
     
     def set_object_origin(self, obj: bpy.types.Object, use_bbox_z='MIN', origin_offset = (0, 0, 0)) -> None:
         """
@@ -42,28 +38,18 @@ class ObjectLoader:
         bpy.context.view_layer.objects.active = obj
         obj.select_set(True)
         
-        # Force update to ensure bounding box is correct
-        bpy.context.view_layer.update()
+        # Get bounding box extrema
+        min_bound, max_bound = get_bbox_extrema(obj)
         
-        # Calculate world space bounding box corners
-        bbox_corners = [obj.matrix_world @ Vector(corner) for corner in obj.bound_box]
-        
-        min_x = min([v.x for v in bbox_corners])
-        max_x = max([v.x for v in bbox_corners])
-        min_y = min([v.y for v in bbox_corners])
-        max_y = max([v.y for v in bbox_corners])
-        min_z = min([v.z for v in bbox_corners])
-        max_z = max([v.z for v in bbox_corners])
-        
-        center_x = (min_x + max_x) / 2
-        center_y = (min_y + max_y) / 2
+        center_x = (min_bound.x + max_bound.x) / 2
+        center_y = (min_bound.y + max_bound.y) / 2
         # Switch statement for z
         if use_bbox_z == 'MIN':
-            z = min_z
+            z = min_bound.z
         elif use_bbox_z == 'CENTER':
-            z = (min_z + max_z) / 2
+            z = (min_bound.z + max_bound.z) / 2
         else:  # 'MAX'
-            z = max_z
+            z = max_bound.z
         
         # Use the 3D cursor to set the origin
         saved_cursor_loc = bpy.context.scene.cursor.location.copy()
@@ -76,7 +62,7 @@ class ObjectLoader:
         # Restore cursor
         bpy.context.scene.cursor.location = saved_cursor_loc
 
-    def preprocess_object(self, imported_objects: list) -> bpy.types.Object:
+    def preprocess_objects(self, imported_objects: list) -> bpy.types.Object:
         """
         Merges all imported mesh objects into a single object, removes non-mesh objects
         (empties, armatures, etc.), scales to fit 1m box, and sets the origin.
@@ -150,22 +136,12 @@ class ObjectLoader:
         if not obj:
             return
 
-        # Force update to ensure bounding box is correct
-        bpy.context.view_layer.update()
+        # Get bounding box extrema
+        min_bound, max_bound = get_bbox_extrema(obj)
 
-        # Calculate world space bounding box corners
-        bbox_corners = [obj.matrix_world @ Vector(corner) for corner in obj.bound_box]
-
-        min_x = min(v.x for v in bbox_corners)
-        max_x = max(v.x for v in bbox_corners)
-        min_y = min(v.y for v in bbox_corners)
-        max_y = max(v.y for v in bbox_corners)
-        min_z = min(v.z for v in bbox_corners)
-        max_z = max(v.z for v in bbox_corners)
-
-        size_x = max_x - min_x
-        size_y = max_y - min_y
-        size_z = max_z - min_z
+        size_x = max_bound.x - min_bound.x
+        size_y = max_bound.y - min_bound.y
+        size_z = max_bound.z - min_bound.z
 
         largest_dim = max(size_x, size_y, size_z)
 

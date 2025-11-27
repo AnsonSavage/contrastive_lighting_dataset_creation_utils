@@ -2,6 +2,8 @@ import bpy
 import random
 import math
 from mathutils import Vector, Matrix, Euler
+import colorsys
+from utils.visibility_utils import check_visibility
 
 
 class DiscreteLightGenerator:
@@ -30,8 +32,11 @@ class DiscreteLightGenerator:
 
         # Per-instance RNG (so we don't mutate global random state)
         self.rng = random.Random(self.seed)
+        
+        # Current lights
+        self.light_objects = []
 
-    def sample_cone(self, normal: Vector, theta_max_deg: float) -> Vector:
+    def _sample_cone(self, normal: Vector, theta_max_deg: float) -> Vector:
         """
         Generates a random unit vector within a cone defined by a normal and max angle.
         Uniformly distributed over the solid angle.
@@ -74,41 +79,48 @@ class DiscreteLightGenerator:
             for light_data in light_data_to_remove:
                 if light_data and light_data.users == 0:
                     bpy.data.lights.remove(light_data)
+        self.light_objects = []
 
     @staticmethod
     def hsv_to_rgb(h, s, v):
-        import colorsys
         return colorsys.hsv_to_rgb(h, s, v)
 
-    def generate_lights(self, target_object, camera):
-        if not target_object or not camera:
-            print("Error: Select an object and ensure a camera exists.")
-            return
+    def align_lighting_configuration_to_target_object(self, target_object: bpy.types.Object):
+        assert len(self.light_objects) > 0, "No lights to align."
+        target_loc = target_object.location
+        for light_obj in self.light_objects:
+            light_obj.location += target_loc # Shift light position to be relative to target object
 
-        self.clear_previous_lights()
+    def align_lighting_configuration_to_camera(self, camera: bpy.types.Object):
+        assert len(self.light_objects) > 0, "No lights to align."
 
+        matrix_to_align_camera_with_y_axis = self.get_matrix_to_align_with_camera_looking_down_y_axis(camera)
+        rotation_matrix_4x4 = matrix_to_align_camera_with_y_axis.to_4x4()
+        for light_obj in self.light_objects:
+            # Rotate the light object around the world origin using the matrix
+            light_obj.matrix_world = rotation_matrix_4x4 @ light_obj.matrix_world
+    
+    def _get_light_collection(self) -> bpy.types.Collection:
         # Create Collection
         if self.collection_name not in bpy.data.collections:
             light_collection = bpy.data.collections.new(self.collection_name)
             bpy.context.scene.collection.children.link(light_collection)
         else:
             light_collection = bpy.data.collections[self.collection_name]
+        return light_collection
 
+    def generate_light_configuration_from_seed(self):
+        self.clear_previous_lights()
+        light_collection = self._get_light_collection()
         num_lights = self.rng.randint(self.min_lights, self.max_lights)
 
-        cam_rot_mat = camera.matrix_world.to_quaternion().to_matrix()
-
-        target_loc = target_object.location
         
         # We define the "Up" direction for the hemisphere.
-        # Using Global Z (0,0,1) ensures we don't intersect the floor.
-        # If you wanted the lights to come from the camera's direction, you would use:
-        # cone_axis = active_cam.matrix_world.to_quaternion() @ Vector((0,0,-1))
+        # Using Global Z (0,0,1) helps to avoid intersecting the floor.
         cone_axis = Vector((0, 0, 1)) 
 
-        print(f"Generating {num_lights} lights in a {self.max_cone_angle} degree cone...")
-
-        light_objs = []
+        print(f"Generating {num_lights} lights in a {self.max_cone_angle} degree cone...", flush=True)
+        
         for i in range(num_lights):
             # 1. Random Props (use per-instance RNG)
             dist = self.rng.uniform(self.min_dist, self.max_dist)
@@ -118,15 +130,10 @@ class DiscreteLightGenerator:
 
             # 2. Calculate Position using sample_cone
             # This returns a unit vector pointing somewhere in the sky
-            direction_vec = self.sample_cone(cone_axis, self.max_cone_angle)
+            direction_vec = self._sample_cone(cone_axis, self.max_cone_angle)
             
-            # Scale by distance
-            local_vec = direction_vec * dist
-
-            matrix_to_align_camera_with_y_axis = self.get_matrix_to_align_with_camera_looking_down_y_axis(camera)
-            aligned_vec = matrix_to_align_camera_with_y_axis @ local_vec
-            
-            final_pos = target_loc + aligned_vec
+            # Compute its final position in local space
+            local_pos = direction_vec * dist
 
             # 3. Create Light
             light_data = bpy.data.lights.new(name=f"GenLight_{self.seed}_{i}", type='AREA')
@@ -134,20 +141,18 @@ class DiscreteLightGenerator:
             
             light_collection.objects.link(light_obj)
             
-            light_obj.location = final_pos
+            light_obj.location = local_pos
             light_data.energy = power
             light_data.color = color_rgb
             light_data.shape = 'SQUARE'
             light_data.size = size
 
-            # 4. Point Light at Object
-            direction = target_loc - light_obj.location
+            # 4. Point Light at origin
+            direction = Vector((0, 0, 0)) - light_obj.location
             light_obj.rotation_euler = direction.to_track_quat('-Z', 'Y').to_euler()
 
-            light_objs.append(light_obj)
+            self.light_objects.append(light_obj)
 
-        bpy.context.view_layer.update()
-        self.post_check_light_visibility(light_objs, target_object)
         print("Done.")
     
     def get_matrix_to_align_with_camera_looking_down_y_axis(self, camera: bpy.types.Object) -> Matrix:
@@ -162,53 +167,15 @@ class DiscreteLightGenerator:
         self.seed = new_seed
         self.rng = random.Random(self.seed)
 
-    def check_visibility(self, light_pos, target_obj):
-        scene = bpy.context.scene
-        depsgraph = bpy.context.evaluated_depsgraph_get()
-        
-        # 1. Check center
-        target_center = target_obj.matrix_world.translation
-        direction = target_center - light_pos
-        dist = direction.length
-        if dist < 1e-4: # If we're close, consider it visible
-            return True
-            
-        success, location, normal, index, object, matrix = scene.ray_cast(depsgraph, light_pos, direction.normalized())
-        
-        if success and object == target_obj:
-            return True
-            
-        # 2. Check a subset of vertices to see if any of them are visible from the light
-        if target_obj.type == 'MESH':
-            mw = target_obj.matrix_world
-            mesh = target_obj.data
-            vertices = mesh.vertices
-            
-            step = max(1, len(vertices) // 50) 
-            
-            for i in range(0, len(vertices), step):
-                v = vertices[i]
-                v_world = mw @ v.co
-                direction = v_world - light_pos
-                dist = direction.length
-                
-                if dist < 1e-6:
-                    continue
-                    
-                success, location, normal, index, object, matrix = scene.ray_cast(depsgraph, light_pos, direction.normalized(), distance=dist + 1.0)
-                
-                if success and object == target_obj:
-                    return True
-                    
-        return False
-
-    def post_check_light_visibility(self, light_objs, target_obj):
+    def verify_lighting_visible_to_target(self, target_obj) -> bool:
+        bpy.context.view_layer.update()
         visible_count = 0
-        for light_obj in light_objs:
+        for light_obj in self.light_objects:
             pos = light_obj.location
-            if self.check_visibility(pos, target_obj):
+            if check_visibility(pos, target_obj, pre_update_view_layer=False):
                 print(f"Light {light_obj.name} is visible to the target object.")
                 visible_count += 1
             else:
                 print(f"Light {light_obj.name} is NOT visible to the target object.")
-        print(f"{visible_count}/{len(light_objs)} lights are visible to the target object.")
+        print(f"{visible_count}/{len(self.light_objects)} lights are visible to the target object.")
+        return visible_count == len(self.light_objects)
