@@ -14,17 +14,21 @@ from camera_spawner import CameraSpawner
 from discrete_light_utils import DiscreteLightGenerator, ObjectLoader, ObjectScatterer, ObjectSelector
 from discrete_light_utils.collection_utils import clear_collection_objects, ensure_collection
 from rendering.render_manager import RenderManager
+from scene_preparation_scripts.configure_discrete_light_scene import (
+    SCATTER_SURFACE_NAME,
+    CAMERA_NAME,
+    LOOK_FROM_VOLUME_NAME,
+    FOCUS_OBJECT_NAME,
+    FOCUS_OBJECTS_COLLECTION_NAME,
+    BACKGROUND_OBJECTS_COLLECTION_NAME
+)
 
 import importlib
 importlib.reload(sys.modules['discrete_light_utils'])
 importlib.reload(sys.modules['camera_spawner'])
 importlib.reload(sys.modules['discrete_light_utils.collection_utils'])
 importlib.reload(sys.modules['rendering.render_manager'])
-
-SCATTER_SURFACE_NAME = "scatter_surface"
-CAMERA_NAME = "procedural_camera"
-LOOK_FROM_VOLUME_NAME = "look_from_volume"
-FOCUS_OBJECT_NAME = "focus_object"
+importlib.reload(sys.modules['scene_preparation_scripts.configure_discrete_light_scene'])
 
 
 def create_file_output_name(camera_seed: int, ligting_seed: int, scatter_seed: int, object_selector_seed: int) -> str:
@@ -141,8 +145,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Discrete light contrastive setup")
     parser.add_argument('folder', nargs='?', default=r'C:\Users\yaboy\Downloads\test_set_of_glb_files', help='Path to folder containing focus object files') # TODO: change default to None so that this arg is required
-    parser.add_argument('-n', '--num-objects', type=int, default=3, help='Number of objects to import and scatter (default: 3)')
-    parser.add_argument('--num-background-objects', type=int, default=3, help='Target number of background objects to place (default: 3)')
+    parser.add_argument('--num-background-objects', type=int, default=2, help='Target number of background objects to place (default: 2)')
     parser.add_argument('--max-background-placement-attempts', type=int, default=50, help='Maximum attempts per background object placement (default: 50)')
     parser.add_argument('--min-distance', type=float, default=1.5, help='Minimum distance between scattered objects (default: 1.5)')
     parser.add_argument('--max-object-dimension', type=float, default=2, help='The size of the maximum dimension of imported objects after scaling (default: 2)')
@@ -174,13 +177,13 @@ if __name__ == "__main__":
     discrete_light_generator.generate_light_configuration()
 
     # Place a focus object
-    clear_collection_objects('Focus_Objects') # TODO: this could probably move the unused objects into an unused collection, unless the likelihood of selecting the same object again is too low... 
+    clear_collection_objects(FOCUS_OBJECTS_COLLECTION_NAME) # TODO: this could probably move the unused objects into an unused collection, unless the likelihood of selecting the same object again is too low... 
     object_loader = ObjectLoader()
     object_selector_seed = random.randint(0, 10000)  # Separate seed for focus object selection
     object_selector = ObjectSelector(folder_arg, object_loader, max_file_size_mb=20, seed=object_selector_seed)
     focus_object = object_selector.load_object()
     focus_object.name = FOCUS_OBJECT_NAME
-    focus_objects_collection = ensure_collection('Focus_Objects')
+    focus_objects_collection = ensure_collection(FOCUS_OBJECTS_COLLECTION_NAME)
     focus_objects_collection.objects.link(focus_object)
     object_scatterer = ObjectScatterer(scatter_plane_name=SCATTER_SURFACE_NAME, seed=scatter_seed, min_distance=args.min_distance)
     
@@ -214,8 +217,8 @@ if __name__ == "__main__":
     assert folder_arg is not None, "Error: No folder path provided for object import."
     assert os.path.exists(folder_arg), f"Error: Provided folder path does not exist: {folder_arg}"
     
-    background_objects_collection = ensure_collection('Background_Objects')
-    clear_collection_objects('Background_Objects')
+    background_objects_collection = ensure_collection(BACKGROUND_OBJECTS_COLLECTION_NAME)
+    clear_collection_objects(BACKGROUND_OBJECTS_COLLECTION_NAME)
     
     placed_background_count = 0
     
