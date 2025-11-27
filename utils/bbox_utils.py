@@ -31,3 +31,10 @@ def get_bbox_extrema(obj: bpy.types.Object) -> Tuple[Vector, Vector]:
     ))
     
     return min_bound, max_bound
+
+
+def bboxes_intersect(min1: Vector, max1: Vector, min2: Vector, max2: Vector) -> bool:
+    """Check if two axis-aligned bounding boxes intersect."""
+    return (min1.x <= max2.x and max1.x >= min2.x and
+            min1.y <= max2.y and max1.y >= min2.y and
+            min1.z <= max2.z and max1.z >= min2.z)

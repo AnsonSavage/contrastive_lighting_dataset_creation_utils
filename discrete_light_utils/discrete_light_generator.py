@@ -179,3 +179,40 @@ class DiscreteLightGenerator:
                 print(f"Light {light_obj.name} is NOT visible to the target object.")
         print(f"{visible_count}/{len(self.light_objects)} lights are visible to the target object.")
         return visible_count == len(self.light_objects)
+    
+    def check_object_obstructs_lighting(self, candidate_obj: bpy.types.Object, target_obj: bpy.types.Object) -> bool:
+        """
+        Check if a candidate object obstructs visibility from any light to the target object.
+        
+        Args:
+            candidate_obj: The object to check for obstruction
+            target_obj: The focus object that must remain visible to all lights
+            
+        Returns:
+            True if the candidate object obstructs any light, False otherwise
+        """
+        bpy.context.view_layer.update()
+        
+        scene = bpy.context.scene
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        target_center = target_obj.matrix_world.translation
+        
+        for light_obj in self.light_objects:
+            light_pos = light_obj.location
+            direction = target_center - light_pos
+            dist = direction.length
+            
+            if dist < 1e-4:
+                continue
+            
+            # Cast ray from light to target
+            success, location, normal, index, hit_object, matrix = scene.ray_cast(
+                depsgraph, light_pos, direction.normalized(), distance=dist
+            )
+            
+            # If we hit the candidate object before reaching the target, it's obstructing
+            if success and hit_object == candidate_obj:
+                print(f"Object {candidate_obj.name} obstructs light {light_obj.name} to target {target_obj.name}")
+                return True
+        
+        return False
