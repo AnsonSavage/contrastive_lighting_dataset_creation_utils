@@ -13,16 +13,122 @@ sys.path.append(local_path)
 from camera_spawner import CameraSpawner
 from discrete_light_utils import DiscreteLightGenerator, ObjectLoader, ObjectScatterer, ObjectSelector
 from discrete_light_utils.collection_utils import clear_collection_objects, ensure_collection
+from rendering.render_manager import RenderManager
 
 import importlib
 importlib.reload(sys.modules['discrete_light_utils'])
 importlib.reload(sys.modules['camera_spawner'])
 importlib.reload(sys.modules['discrete_light_utils.collection_utils'])
+importlib.reload(sys.modules['rendering.render_manager'])
 
 SCATTER_SURFACE_NAME = "scatter_surface"
 CAMERA_NAME = "procedural_camera"
 LOOK_FROM_VOLUME_NAME = "look_from_volume"
 FOCUS_OBJECT_NAME = "focus_object"
+
+
+def create_file_output_name(camera_seed: int, ligting_seed: int, scatter_seed: int, object_selector_seed: int) -> str:
+    blend_file_name = os.path.splitext(os.path.basename(bpy.data.filepath))[0]
+    return f"{blend_file_name}_cam_{camera_seed}_light_{ligting_seed}_scatter_{scatter_seed}_objsel_{object_selector_seed}.png"
+
+def find_valid_camera_and_object_placement(
+    object_loader: ObjectLoader,
+    object_scatterer: ObjectScatterer,
+    focus_object: bpy.types.Object,
+    discrete_light_generator: DiscreteLightGenerator,
+    max_camera_placement_attempts: int,
+    max_camera_distance: float,
+    camera_seed: int,
+    camera_name: str,
+    look_from_volume_name: str,
+    focus_object_name: str,
+    max_object_placement_attempts: int = 20
+) -> int:
+    camera_and_object_placement_good = False
+    object_placement_attempts = 0
+
+    while not camera_and_object_placement_good:
+        object_placement_attempts += 1
+        if object_placement_attempts > max_object_placement_attempts:
+            raise RuntimeError(f"Failed to find a valid camera and object placement after {max_object_placement_attempts} attempts.")
+
+        object_loader.set_object_origin(focus_object)
+        object_scatterer.scatter_and_rotate(focus_object, check_bbox_intersection=False)
+        object_loader.set_object_origin(focus_object, use_bbox_z='MAX', origin_offset = (0, 0, -0.2)) # Slightly lower origin than the top to help the camera and lights look more at the face of a person as opposed to the top of their head (if the object is a person, for example)
+
+        # Place the camera in a valid location
+        camera = bpy.data.objects.get(camera_name)
+        camera_spawner = CameraSpawner(look_from_volume_name, focus_object_name, camera.name, use_look_at_volume_exact_location=True)
+        camera_placement_attempts = 0
+        while camera_placement_attempts < max_camera_placement_attempts:
+            def pass_criteria(look_from, look_at):
+                # Ensure the camera is at least 1 unit away from the focus object
+                distance = (look_from - look_at).length
+                return distance >= 1.0 and distance <= max_camera_distance
+            
+            camera_spawner.update(update_seed=camera_seed, pass_criteria=pass_criteria, required_visible_target_name=focus_object_name, restore_hidden_state=True) # Place the camera where it can see the focus object
+            discrete_light_generator.align_lighting_configuration_to_camera(camera)
+            discrete_light_generator.align_lighting_configuration_to_target_object(focus_object)
+            if discrete_light_generator.verify_lighting_visible_to_target(focus_object):
+                camera_and_object_placement_good = True
+                break
+            print("Regenerating camera position to ensure lights are visible to focus object...", flush=True)
+            camera_seed += 1  # Change seed to get a new camera position
+            camera_placement_attempts += 1
+    
+        if camera_placement_attempts >= max_camera_placement_attempts:
+            print(f"Failed to place camera with visible lights after {max_camera_placement_attempts} attempts. Retrying with new focus object placement...", flush=True)
+            continue # Retry placing the focus object and camera
+            
+    return camera_seed
+
+
+def sweep_lighting_seeds_and_render(
+    discrete_light_generator: DiscreteLightGenerator,
+    focus_object: bpy.types.Object,
+    camera: bpy.types.Object,
+    start_lighting_seed: int,
+    total_lighting_seeds_attempt_to_render: int,
+    output_dir: str,
+    output_path_generator
+) -> None:
+    render_manager = RenderManager()
+    # Configure basic render settings
+    render_manager.set_render_settings(
+        resolution=(512, 512), 
+        samples=128, 
+        use_gpu_rendering=True
+    )
+    render_manager.set_camera(camera)
+
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    valid_renders_count = 0
+    
+    for i in range(total_lighting_seeds_attempt_to_render):
+        current_lighting_seed = start_lighting_seed + i
+        print(f"Testing lighting seed: {current_lighting_seed}...", flush=True)
+        
+        # Update lighting
+        discrete_light_generator.generate_light_configuration(seed=current_lighting_seed)
+        
+        discrete_light_generator.align_lighting_configuration_to_camera(camera)
+        discrete_light_generator.align_lighting_configuration_to_target_object(focus_object)
+        
+        if discrete_light_generator.verify_lighting_visible_to_target(focus_object):
+            print(f"Lighting seed {current_lighting_seed} is valid. Rendering...", flush=True)
+            
+            # Generate output path using the callback
+            filename = output_path_generator(current_lighting_seed)
+            output_path = os.path.join(output_dir, filename)
+            
+            render_manager.render(output_path=output_path)
+            valid_renders_count += 1
+        else:
+            print(f"Lighting seed {current_lighting_seed} is invalid (obstructed). Skipping.", flush=True)
+
+    print(f"Finished sweeping. Rendered {valid_renders_count} valid images.", flush=True)
 
 
 if __name__ == "__main__":
@@ -43,7 +149,16 @@ if __name__ == "__main__":
     parser.add_argument('--lighting-seed', type=int, default=None, help='Random seed for discrete lighting generation (default: random)')
     parser.add_argument('--max-camera-attempts', type=int, default=20, help='Maximum attempts to place camera with visible lights (default: 100)')
     parser.add_argument('--max-camera-distance', type=float, default=10.0, help='Maximum distance of the camera from the focus object (default: 10.0)')
+    parser.add_argument('--sweep-lighting', action='store_true', help='Enable sweeping through a range of lighting seeds')
+    parser.add_argument('--num-lighting-samples', type=int, default=10, help='Number of lighting seeds to sweep if --sweep-lighting is enabled (default: 10)')
+    parser.add_argument('--output-dir', type=str, default='output_renders', help='Directory to save renders (default: output_renders)')
+    
     args = parser.parse_args(raw_argv)
+
+    # Ensure output_dir is absolute
+    if not os.path.isabs(args.output_dir):
+        args.output_dir = os.path.join(local_path, args.output_dir)
+
     folder_arg = args.folder
     num_background_objects = args.num_background_objects
     max_background_placement_attempts = args.max_background_placement_attempts
@@ -56,12 +171,13 @@ if __name__ == "__main__":
 
     # Generate a lighting configuration based on the seed
     discrete_light_generator = DiscreteLightGenerator(seed=lighting_seed)
-    discrete_light_generator.generate_light_configuration_from_seed()
+    discrete_light_generator.generate_light_configuration()
 
     # Place a focus object
     clear_collection_objects('Focus_Objects') # TODO: this could probably move the unused objects into an unused collection, unless the likelihood of selecting the same object again is too low... 
     object_loader = ObjectLoader()
-    object_selector = ObjectSelector(folder_arg, object_loader, max_file_size_mb=20)
+    object_selector_seed = random.randint(0, 10000)  # Separate seed for focus object selection
+    object_selector = ObjectSelector(folder_arg, object_loader, max_file_size_mb=20, seed=object_selector_seed)
     focus_object = object_selector.load_object()
     focus_object.name = FOCUS_OBJECT_NAME
     focus_objects_collection = ensure_collection('Focus_Objects')
@@ -69,42 +185,20 @@ if __name__ == "__main__":
     object_scatterer = ObjectScatterer(scatter_plane_name=SCATTER_SURFACE_NAME, seed=scatter_seed, min_distance=args.min_distance)
     
 
-    camera_and_object_placement_good = False
-    object_placement_attempts = 0
-    max_object_placement_attempts = 20
-
-    while not camera_and_object_placement_good:
-        object_placement_attempts += 1
-        if object_placement_attempts > max_object_placement_attempts:
-            raise RuntimeError(f"Failed to find a valid camera and object placement after {max_object_placement_attempts} attempts.")
-
-        object_loader.set_object_origin(focus_object)
-        object_scatterer.scatter_and_rotate(focus_object, check_bbox_intersection=False)
-        object_loader.set_object_origin(focus_object, use_bbox_z='MAX', origin_offset = (0, 0, -0.2))
-
-        # Place the camera in a valid location
-        camera = bpy.data.objects.get(CAMERA_NAME)
-        camera_spawner = CameraSpawner(LOOK_FROM_VOLUME_NAME, FOCUS_OBJECT_NAME, camera.name, use_look_at_volume_exact_location=True)
-        camera_placement_attempts = 0
-        while camera_placement_attempts < max_camera_placement_attempts:
-            def pass_criteria(look_from, look_at):
-                # Ensure the camera is at least 1 unit away from the focus object
-                distance = (look_from - look_at).length
-                return distance >= 1.0 and distance <= max_camera_distance
-            # camera_spawner.update(update_seed=camera_seed, pass_criteria=pass_criteria, restore_hidden_state=True) # Place the camera where it can see the focus object
-            camera_spawner.update(update_seed=camera_seed, pass_criteria=pass_criteria, required_visible_target_name=FOCUS_OBJECT_NAME, restore_hidden_state=True) # Place the camera where it can see the focus object
-            discrete_light_generator.align_lighting_configuration_to_camera(camera)
-            discrete_light_generator.align_lighting_configuration_to_target_object(focus_object)
-            if discrete_light_generator.verify_lighting_visible_to_target(focus_object):
-                camera_and_object_placement_good = True
-                break
-            print("Regenerating camera position to ensure lights are visible to focus object...", flush=True)
-            camera_seed += 1  # Change seed to get a new camera position
-            camera_placement_attempts += 1
+    camera_seed = find_valid_camera_and_object_placement(
+        object_loader,
+        object_scatterer,
+        focus_object,
+        discrete_light_generator,
+        max_camera_placement_attempts,
+        max_camera_distance,
+        camera_seed,
+        CAMERA_NAME,
+        LOOK_FROM_VOLUME_NAME,
+        FOCUS_OBJECT_NAME
+    )
     
-        if camera_placement_attempts >= max_camera_placement_attempts:
-            print(f"Failed to place camera with visible lights after {max_camera_placement_attempts} attempts. Retrying with new focus object placement...", flush=True)
-            continue # Retry placing the focus object and camera
+    camera = bpy.data.objects.get(CAMERA_NAME)
     
     # Successfully placed camera and focus object with visible lights
 
@@ -124,7 +218,6 @@ if __name__ == "__main__":
     clear_collection_objects('Background_Objects')
     
     placed_background_count = 0
-    background_object_selector = ObjectSelector(folder_arg, object_loader, max_file_size_mb=20)
     
     print(f"Attempting to place {num_background_objects} background objects...", flush=True)
     
@@ -133,7 +226,7 @@ if __name__ == "__main__":
         
         # Load a new background object
         try:
-            bg_object = background_object_selector.load_object()
+            bg_object = object_selector.load_object()
             if bg_object is None:
                 print(f"Warning: Failed to load background object {i+1}, skipping.", flush=True)
                 continue
@@ -179,3 +272,28 @@ if __name__ == "__main__":
         print(f"Successfully placed background object {i+1}.", flush=True)
     
     print(f"Successfully placed {placed_background_count}/{num_background_objects} background objects.", flush=True)
+
+    args.sweep_lighting = True # TODO: remove this line after testing
+    if args.sweep_lighting:
+        print("Starting lighting sweep...", flush=True)
+        
+        # Create a callback that generates output filenames based on lighting seed
+        def output_path_generator(lighting_seed):
+            return create_file_output_name(
+                camera_seed=camera_seed,
+                ligting_seed=lighting_seed,
+                scatter_seed=scatter_seed,
+                object_selector_seed=object_selector_seed
+            )
+        
+        sweep_lighting_seeds_and_render(
+            discrete_light_generator,
+            focus_object,
+            camera,
+            start_lighting_seed=lighting_seed,
+            total_lighting_seeds_attempt_to_render=args.num_lighting_samples,
+            output_dir=args.output_dir,
+            output_path_generator=output_path_generator
+        )
+    else:
+        print("Lighting sweep disabled. Setup complete.", flush=True)

@@ -5,7 +5,7 @@ from .object_loader import ObjectLoader
 from utils.bbox_utils import get_bbox_extrema
 
 class ObjectSelector:
-    def __init__(self, directory: str, object_loader: ObjectLoader, min_height: float = 0.5, max_file_size_mb: float = 50.0):
+    def __init__(self, directory: str, object_loader: ObjectLoader, min_height: float = 0.5, max_file_size_mb: float = 50.0, seed: int | None = None):
         self.min_height = min_height
         self.max_file_size_mb = max_file_size_mb
         self.directory = directory
@@ -13,6 +13,8 @@ class ObjectSelector:
         self.all_files = self._get_all_files()
         self.invalid_files = set()
         self.object_loader = object_loader
+        self.seed = seed
+        self.rng = random.Random(seed)
 
     def _get_all_files(self):
         if not os.path.isdir(self.directory):
@@ -34,7 +36,7 @@ class ObjectSelector:
             if not valid_files:
                 raise RuntimeError("No valid files available to load.")
 
-            candidate_filename = random.choice(valid_files)
+            candidate_filename = self.rng.choice(valid_files)
             candidate_filepath = os.path.join(self.directory, candidate_filename)
             
             # Import the object(s)

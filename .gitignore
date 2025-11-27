@@ -7,3 +7,4 @@ venv/
 contrastive_data/*
 *.out
 input_models_path.json
+output_renders/

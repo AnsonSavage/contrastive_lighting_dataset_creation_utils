@@ -8,7 +8,8 @@ from utils.visibility_utils import check_visibility
 
 class DiscreteLightGenerator:
     def __init__(self, collection_name="Generated_Lighting", seed=21):
-        self.seed = seed
+        self.rng = None
+        self.set_seed(seed)
         self.collection_name = collection_name
         
         # Cone Angle (where 90.0 = Full Hemisphere)
@@ -29,9 +30,6 @@ class DiscreteLightGenerator:
         # Saturation
         self.saturation_min = 0.1
         self.saturation_max = 0.9
-
-        # Per-instance RNG (so we don't mutate global random state)
-        self.rng = random.Random(self.seed)
         
         # Current lights
         self.light_objects = []
@@ -147,7 +145,10 @@ class DiscreteLightGenerator:
         strength = self.rng.uniform(0.1, 0.5)
         bg_node.inputs['Strength'].default_value = strength
 
-    def generate_light_configuration_from_seed(self):
+    def generate_light_configuration(self, seed=None):
+        if seed is not None:
+            self.set_seed(seed)
+
         self.clear_previous_lights()
         self.randomize_background()
         light_collection = self._get_light_collection()
@@ -163,6 +164,7 @@ class DiscreteLightGenerator:
         for i in range(num_lights):
             # 1. Random Props (use per-instance RNG)
             dist = self.rng.uniform(self.min_dist, self.max_dist)
+            print("CHOSE DISTANCE OF:", dist, flush=True)
             size = self.rng.uniform(self.min_size, self.max_size)
             power = self.rng.uniform(self.min_power, self.max_power)
             color_rgb = self.hsv_to_rgb(self.rng.random(), self.rng.uniform(self.saturation_min, self.saturation_max), 1.0)
@@ -192,7 +194,7 @@ class DiscreteLightGenerator:
 
             self.light_objects.append(light_obj)
 
-        print("Done.")
+        print("Light generation complete.", flush=True)
     
     def get_matrix_to_align_with_camera_looking_down_y_axis(self, camera: bpy.types.Object) -> Matrix:
         # camera_rotation_inverted = camera.matrix_world.to_quaternion().to_matrix().inverted() # should also be able to use the transpose b/c it's an orthonormal matrix
