@@ -10,9 +10,11 @@ class ObjectLoader:
         bpy.ops.object.select_all(action='DESELECT')
 
         if path_to_object.endswith(".glb") or path_to_object.endswith(".gltf"):
-            bpy.ops.import_scene.gltf(filepath=path_to_object, merge_vertices=True)
-        elif path_to_object.endswith(".fbx"):
-            bpy.ops.import_scene.fbx(filepath=path_to_object)
+            try:
+                bpy.ops.import_scene.gltf(filepath=path_to_object, merge_vertices=True)
+            except Exception as e:
+                print(f"Error importing GLB/GLTF file {path_to_object}: {e}", flush=True)
+                raise e
         else:
             raise ValueError(f"Unsupported file type: {path_to_object}")
         

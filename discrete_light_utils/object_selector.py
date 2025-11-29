@@ -40,7 +40,12 @@ class ObjectSelector:
             candidate_filepath = os.path.join(self.directory, candidate_filename)
             
             # Import the object(s)
-            imported_objects = self.object_loader.import_object(candidate_filepath)
+            try:
+                imported_objects = self.object_loader.import_object(candidate_filepath)
+            except Exception as e:
+                print(f"Failed to import object '{candidate_filename}': {e}", flush=True)
+                self.invalid_files.add(candidate_filename)
+                continue
             
             # Preprocess (merges, cleans up, returns single object or None)
             candidate_object = self.object_loader.preprocess_objects(imported_objects)

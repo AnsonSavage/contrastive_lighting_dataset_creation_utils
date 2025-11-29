@@ -1,6 +1,6 @@
 # Contrastive Lighting Dataset Creation Utils
 
-Utilities for generating and managing a contrastive lighting dataset using Blender and HDRI environments.
+Utilities for generating and managing a contrastive lighting dataset using Blender and HDRI environments. This codebase is designed to procedurally generate synthetic images with varying lighting, camera angles, and object placements for machine learning tasks.
 
 ## Environment Configuration (.env)
 
@@ -10,7 +10,7 @@ This project relies on absolute paths to external resources (your Blender execut
 
 Copy the provided example file and edit the values:
 
-```
+```bash
 cp .env.example .env
 ```
 
@@ -20,8 +20,11 @@ Then open `.env` and set:
 |----------|-------------|---------|
 | `BLENDER_PATH` | Absolute path to the Blender binary used for headless/background rendering. | `/groups/procedural_research/blender-4.5.3-linux-x64/blender` |
 | `DATA_PATH` | Root directory that contains (or will contain) subfolders like `scenes/`, `hdri/`, `renders/`, etc. | `/groups/procedural_research/data/procedural_dataset_generation_data` |
+| `PRODUCT_SCENES_DIR` | Directory containing the base `.blend` files for product scenes. | `/home/user/my_product_scenes` |
 
 The `.env` file is **gitignored** so you can safely keep machine specific paths there.
+
+Note however that this .env can't be properly loaded from within some Blender scripts due to how Blender manages its Python environment. In those cases, these environment paths are set in the SLURM submission script (e.g., `render_product_scenes.sh`, `render_using_multiple_nodes.sh`, etc.).
 
 ### 2. Expected Subdirectories Under `DATA_PATH`
 
@@ -29,104 +32,71 @@ You can structure `DATA_PATH` like this (names may evolve):
 
 ```
 DATA_PATH/
-  scenes/                  # .blend scene files
+  scenes/outdoor/          # .blend scene files
+  scenes/product/          # .blend scene files
   hdri/                    # Each HDRI in its own folder with resolutions + metadata JSON
   renders/                 # Generated image outputs
-  metadata/                # (Optional) Central JSON indices / task definitions
-  temp/                    # (Optional) Scratch / intermediate outputs
+  obj/                     # 3D Object assets (e.g. Objaverse)
 ```
 
-HDRI folders are expected to look like:
-```
-hdri/<hdri_name>/
-  <hdri_name>_2k.exr
-  <hdri_name>_4k.exr
-  <hdri_name>_asset_metadata.json
-  ...
-```
+## Main Functionalities
 
-Scene files retain their `.blend` extension (used as the scene id).
+### Product Scene Rendering Pipeline
 
-### 3. Validation
-When the project imports its environment module, it will:
-- Load `.env`
-- Ensure `BLENDER_PATH` exists and is executable
-- Ensure `DATA_PATH` exists
-- (Later) Optionally create missing subfolders
+One functionality of this repository is the "Product Scene" rendering pipeline, which generates thousands of variations of base scenes by randomizing lighting, camera positions, and background objects.
 
-### 4. Why Use `.env`?
-- Keeps code portable across Linux / Windows / cluster machines
-- Prevents accidental commits of local absolute paths
-- Allows different Blender versions per developer
-- Simplifies deployment on render nodes
+#### Workflow
 
-## Installing Dependencies
+1.  **Submission**: The process starts with `local_data_acquisition_scripts/render_product_scenes.sh`. This is a SLURM submission script that launches an array job.
+2.  **Orchestration**: The shell script runs `local_data_acquisition_scripts/render_product_scenes_worker.py`. This worker:
+    *   Scans `PRODUCT_SCENES_DIR` for `.blend` files.
+    *   Calculates a "shard" of work based on the SLURM array index.
+    *   **Load Balancing**: Work is split not just by scene, but by *seeds*. If you have 10 scenes and 1000 seeds each, the worker ensures all SLURM nodes get an equal chunk of the total (10,000) render tasks.
+    *   Launches Blender in a subprocess for each chunk.
+3.  **Rendering**: Inside Blender, `local_data_acquisition_scripts/render_product_scene_blender.py` executes:
+    *   **Configuration**: Reads `scene_metadata.json` (if present in the project root) to override settings like `num_background_objects`.
+    *   **Scene Setup**: Loads a random "focus object" and "background objects" using `ObjectLoader` and `ObjectScatterer`.
+    *   **Placement**: Randomly places objects on a defined scatter surface, ensuring no collisions.
+    *   **Camera**: Spawns a camera looking at the focus object using `CameraSpawner`.
+    *   **Lighting**: Generates discrete lights (point/area) within a cone directed at the object using `DiscreteLightGenerator`.
+    *   **Output**: Renders the frame and saves it to `DATA_PATH/renders/product/<scene_name>/`.
 
-Create / activate your virtual environment, then install requirements:
+#### Usage
 
-```
-pip install -r requirements.txt
+To submit a job to the cluster:
+
+```bash
+sbatch local_data_acquisition_scripts/render_product_scenes.sh
 ```
 
-`python-dotenv` is used to load the `.env`. Other dependencies:
-- `requests` (Poly Haven API downloader)
-- `torch` (optional now, planned for dataset pipelines)
+Ensure you have configured your `.env` file and that `render_product_scenes.sh` has the correct SLURM parameters (partition, time, etc.) for your environment.
 
-## Using the Environment Variables in Code
+#### Key Modules
 
-A small helper module (`environment.py`) centralizes access. Example:
+##### `local_data_acquisition_scripts/`
+Contains the entry points for the rendering pipeline.
+- `render_product_scenes.sh`: SLURM job script.
+- `render_product_scenes_worker.py`: Python orchestrator for load balancing.
+- `render_product_scene_blender.py`: The script that runs *inside* Blender.
 
-```python
-from environment import BLENDER_PATH, DATA_PATH
+##### `discrete_light_utils/`
+Utilities for procedural generation.
+- `discrete_light_generator.py`: Generates randomized lighting configurations.
+- `object_scatterer.py`: Handles collision-free placement of objects on surfaces.
+- `object_loader.py`: Loads 3D models from the dataset.
 
-print(BLENDER_PATH)
-print(DATA_PATH)
+##### `rendering/`
+Core rendering abstraction.
+- `render_manager.py`: Configures the render engine (Cycles, GPU/OptiX) and executes the render.
+- `camera_spawner.py`: Helper for placing cameras with visibility constraints.
+
+##### `scene_metadata.json`
+An optional JSON file in the project root that allows per-scene configuration overrides.
+Example:
+```json
+{
+    "my_scene_name": {
+        "num_background_objects": 5
+    }
+}
 ```
-
-Downstream modules should import from `environment` instead of calling `dotenv` directly.
-
-## Blender Usage Notes
-- Some scripts are meant to be run *inside* Blender (have `import bpy`). Those can still rely on `python-dotenv` as long as the working directory includes the `.env` file (or you add its path to `sys.path`).
-- Headless renders are launched via subprocess using `BLENDER_PATH`.
-
-## Poly Haven HDRIs
-Use `remote_data_acquisition_scripts/polyhaven_hdri_downloader.py` to populate `DATA_PATH/hdri`. Example:
-
-```
-python remote_data_acquisition_scripts/polyhaven_hdri_downloader.py \
-  /path/to/DATA_PATH/hdri \
-  kiara_1_dawn venice_sunrise abandon_building \
-  --resolution 4k --format exr
-```
-
-## Future Improvements (Ideas)
-- Auto-create missing subdirectories on startup
-- Add CLI for validating dataset integrity
-- Extend env config for cache, logs, checkpoint paths
-
-## Troubleshooting
-| Symptom | Likely Cause | Fix |
-|---------|--------------|-----|
-| `FileNotFoundError` for Blender | Wrong `BLENDER_PATH` | Update `.env` path |
-| Empty HDRI list | Incorrect `DATA_PATH/hdri` path | Verify directory & names |
-| Script works locally but not on cluster | Missing `.env` on node | Copy `.env` or set shell env vars |
-
-You can also override by exporting shell variables (they take precedence):
-```
-export BLENDER_PATH=/custom/blender
-export DATA_PATH=/custom/data_root
-```
-
-## Project Structure
-
-- `data/`: Core dataset definitions and task logic.
-- `dummy_data/`: Sample data for testing (HDRIs, scenes).
-- `local_data_acquisition_scripts/`: Scripts for generating data locally (e.g., `render_configuration_text_pair.py`).
-- `preview_scripts/`: Tools for previewing assets and lighting (e.g., `automatic_lighting_tests.py`).
-- `remote_data_acquisition_scripts/`: Scripts for downloading external assets (e.g., `polyhaven_hdri_downloader.py`, `download_objaverse.py`).
-- `rendering/`: Core rendering logic and managers.
-- `scene_preparation_scripts/`: Utilities for preparing scenes (e.g., `configure_camera_collections.py`).
-- `utils/`: General utility functions.
-
----
-Happy rendering!
