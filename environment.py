@@ -44,6 +44,7 @@ if not Path(DATA_PATH).exists():
 SCENES_DIR = os.path.join(DATA_PATH, "scenes")
 OUTDOOR_SCENES_DIR = os.path.join(SCENES_DIR, "outdoor")
 INDOOR_SCENES_DIR = os.path.join(SCENES_DIR, "indoor")
+PRODUCT_SCENES_DIR = os.path.join(SCENES_DIR, "product")
 HDRI_DIR = os.path.join(DATA_PATH, "hdri")
 RENDERS_DIR = os.path.join(DATA_PATH, "renders")
 
