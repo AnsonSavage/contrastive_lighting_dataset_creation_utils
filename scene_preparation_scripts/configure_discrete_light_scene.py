@@ -82,6 +82,9 @@ def setup_discrete_light_scene():
         bm.to_mesh(mesh_data)
         bm.free()
         
+        # Ensure the scatter surface is not renderable by default
+        obj.hide_render = True
+        
         print(f"Added '{SCATTER_SURFACE_NAME}' to the scene (default 10x10 plane).")
     else:
         print(f"'{SCATTER_SURFACE_NAME}' already exists.")
