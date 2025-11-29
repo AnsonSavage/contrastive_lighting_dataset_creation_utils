@@ -12,6 +12,7 @@ SCALE_REFERENCE_NAME = "scale_reference"
 
 FOCUS_OBJECTS_COLLECTION_NAME = "Focus_Objects"
 BACKGROUND_OBJECTS_COLLECTION_NAME = "Background_Objects"
+EXCLUDED_OBJECTS_COLLECTION_NAME = "Excluded_From_Discrete_Lights"
 
 # Object Data Names
 CAMERA_DATA_NAME = "procedural_camera_data"
@@ -35,6 +36,7 @@ def setup_discrete_light_scene():
     # --- 1. Create Collections ---
     get_or_create_collection(FOCUS_OBJECTS_COLLECTION_NAME)
     get_or_create_collection(BACKGROUND_OBJECTS_COLLECTION_NAME)
+    get_or_create_collection(EXCLUDED_OBJECTS_COLLECTION_NAME)
     
     # --- 2. Create Objects ---
 

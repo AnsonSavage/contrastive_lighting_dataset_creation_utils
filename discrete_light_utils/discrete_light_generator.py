@@ -7,10 +7,11 @@ from utils.visibility_utils import check_visibility
 
 
 class DiscreteLightGenerator:
-    def __init__(self, collection_name="Generated_Lighting", seed=21):
+    def __init__(self, collection_name="Generated_Lighting", seed=21, excluded_collection_name=None):
         self.rng = None
         self.set_seed(seed)
         self.collection_name = collection_name
+        self.excluded_collection_name = excluded_collection_name
         
         # Cone Angle (where 90.0 = Full Hemisphere)
         self.max_cone_angle = 70.0
@@ -71,6 +72,13 @@ class DiscreteLightGenerator:
             objs_to_remove = [obj for obj in coll.objects]
             light_data_to_remove = {obj.data for obj in objs_to_remove if obj.data and obj.type == 'LIGHT'}
             
+            # Cleanup Light Linking Collections
+            for obj in objs_to_remove:
+                # Find collections starting with "Light Linking for " + obj.name
+                cols_to_remove = [c for c in bpy.data.collections if c.name.startswith(f"Light Linking for {obj.name}")]
+                for c in cols_to_remove:
+                    bpy.data.collections.remove(c)
+
             for obj in objs_to_remove:
                 bpy.data.objects.remove(obj, do_unlink=True)
 
@@ -162,6 +170,36 @@ class DiscreteLightGenerator:
         strength = self.rng.uniform(0.1, 0.5)
         bg_node.inputs['Strength'].default_value = strength
 
+    def configure_light_linking(self, light_obj: bpy.types.Object):
+        """
+        Configure light linking for a given light object to exclude objects in the excluded collection.
+        
+        Args:
+            light_obj: The light object to configure
+        """
+        if not self.excluded_collection_name or self.excluded_collection_name not in bpy.data.collections:
+            return
+        
+        excluded_col = bpy.data.collections[self.excluded_collection_name]
+        bpy.context.view_layer.objects.active = light_obj # Select the light as the active object
+        bpy.ops.object.light_linking_receiver_collection_new() # Initialize light linking for the light
+        
+        def get_collection_name(light_object_name):
+            possible_collections = [col for col in bpy.data.collections if col.name.startswith("Light Linking for " + light_object_name)]
+            if possible_collections:
+                return sorted([collection.name for collection in possible_collections])[-1] # Return the last one alphabetically (most recently created)
+            return None
+
+        light_linking_collection_name = get_collection_name(light_obj.name)
+        light_linking_collection = bpy.data.collections.get(light_linking_collection_name)
+        if light_linking_collection:
+            # Link the entire excluded collection as a child of the light linking collection
+            light_linking_collection.children.link(excluded_col)
+            
+            # Set the link state to EXCLUDE for the collection
+            for child in light_linking_collection.collection_children: # Should only be one child, the excluded collection
+                child.light_linking.link_state = 'EXCLUDE'
+
     def generate_light_configuration(self, seed=None):
         if seed is not None:
             self.set_seed(seed)
@@ -198,7 +236,10 @@ class DiscreteLightGenerator:
             light_obj = bpy.data.objects.new(name=f"GenLight_{self.seed}_{i}", object_data=light_data)
             
             light_collection.objects.link(light_obj)
-            
+
+            # Configure Light Linking if excluded collection is specified
+            self.configure_light_linking(light_obj)
+                
             light_obj.location = local_pos
             light_data.energy = power
             light_data.color = color_rgb
