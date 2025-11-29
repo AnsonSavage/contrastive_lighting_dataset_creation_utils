@@ -1,0 +1,158 @@
+import bpy
+from mathutils import Vector
+from utils.bbox_utils import get_bbox_extrema
+
+
+class ObjectLoader:
+    def import_object(self, path_to_object: str) -> list[bpy.types.Object]:
+        """Loads a glb/fbx model into the scene and returns all imported objects."""
+        # Deselect all objects first to identify the new ones
+        bpy.ops.object.select_all(action='DESELECT')
+
+        if path_to_object.endswith(".glb") or path_to_object.endswith(".gltf"):
+            bpy.ops.import_scene.gltf(filepath=path_to_object, merge_vertices=True)
+        elif path_to_object.endswith(".fbx"):
+            bpy.ops.import_scene.fbx(filepath=path_to_object)
+        else:
+            raise ValueError(f"Unsupported file type: {path_to_object}")
+        
+        # The imported objects are selected.
+        selected_objects = bpy.context.selected_objects
+        if not selected_objects:
+            print("Warning: No objects were imported.")
+            return []
+            
+        return selected_objects
+    
+    def set_object_origin(self, obj: bpy.types.Object, use_bbox_z='MIN', origin_offset = (0, 0, 0)) -> None:
+        """
+        Sets the object origin such that x and y are the center of the bounding box 
+        and z is the min of the bounding box.
+        """
+        if not obj:
+            return
+        
+        assert use_bbox_z in ('MIN', 'CENTER', 'MAX'), "use_bbox_z must be one of 'MIN', 'CENTER', or 'MAX'"
+
+        # Ensure the object is active and selected
+        bpy.context.view_layer.objects.active = obj
+        obj.select_set(True)
+        
+        # Get bounding box extrema
+        min_bound, max_bound = get_bbox_extrema(obj)
+        
+        center_x = (min_bound.x + max_bound.x) / 2
+        center_y = (min_bound.y + max_bound.y) / 2
+        # Switch statement for z
+        if use_bbox_z == 'MIN':
+            z = min_bound.z
+        elif use_bbox_z == 'CENTER':
+            z = (min_bound.z + max_bound.z) / 2
+        else:  # 'MAX'
+            z = max_bound.z
+        
+        # Use the 3D cursor to set the origin
+        saved_cursor_loc = bpy.context.scene.cursor.location.copy()
+        
+        bpy.context.scene.cursor.location = Vector((center_x, center_y, z)) + Vector(origin_offset)
+        
+        # Set origin to cursor
+        bpy.ops.object.origin_set(type='ORIGIN_CURSOR')
+        
+        # Restore cursor
+        bpy.context.scene.cursor.location = saved_cursor_loc
+
+    def preprocess_objects(self, imported_objects: list) -> bpy.types.Object:
+        """
+        Merges all imported mesh objects into a single object, removes non-mesh objects
+        (empties, armatures, etc.), scales to fit 1m box, and sets the origin.
+        Returns the final merged object, or None if no mesh objects were provided.
+        """
+        if not imported_objects:
+            return None
+
+        # Filter to only mesh objects
+        mesh_objects = [obj for obj in imported_objects if obj.type == 'MESH']
+        non_mesh_objects = [obj for obj in imported_objects if obj.type != 'MESH']
+
+        if not mesh_objects:
+            print("Warning: No mesh objects to preprocess.")
+            # Still clean up non-mesh objects
+            for obj in non_mesh_objects:
+                try:
+                    bpy.data.objects.remove(obj, do_unlink=True)
+                except Exception:
+                    pass
+            return None
+
+        # 1. Clear parenting on mesh objects (keep transforms) BEFORE deleting parents
+        for obj in mesh_objects:
+            if obj.parent:
+                # Store world matrix before clearing parent
+                world_matrix = obj.matrix_world.copy()
+                obj.parent = None
+                obj.matrix_world = world_matrix
+
+        # 2. Apply all transforms (Location, Rotation, Scale) to bake them into the mesh
+        bpy.ops.object.select_all(action='DESELECT')
+        for obj in mesh_objects:
+            obj.select_set(True)
+        
+        if mesh_objects:
+            bpy.context.view_layer.objects.active = mesh_objects[0]
+            bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+
+        # 3. Remove all non-mesh objects (empties, armatures, etc.)
+        for obj in non_mesh_objects:
+            try:
+                bpy.data.objects.remove(obj, do_unlink=True)
+            except Exception:
+                pass
+
+        # 4. Join all selected mesh objects into one
+        # (Objects are already selected from step 2)
+        if mesh_objects:
+            bpy.context.view_layer.objects.active = mesh_objects[0]
+
+        if len(mesh_objects) > 1:
+            bpy.ops.object.join()
+
+        # The active object is now the merged result
+        merged_obj = bpy.context.view_layer.objects.active
+
+        # Scale the object to fit within a 1m x 1m x 1m bounding box (maintaining aspect ratio)
+        self.scale_to_fit(merged_obj, size_of_max_dim=2.0)
+
+        # Set the origin
+        self.set_object_origin(merged_obj)
+
+        return merged_obj
+
+    def scale_to_fit(self, obj: bpy.types.Object, size_of_max_dim: float = 2.0) -> None:
+        """
+        Scales the object uniformly so that its largest dimension fits within max_size,
+        maintaining aspect ratio.
+        """
+        if not obj:
+            return
+
+        # Get bounding box extrema
+        min_bound, max_bound = get_bbox_extrema(obj)
+
+        size_x = max_bound.x - min_bound.x
+        size_y = max_bound.y - min_bound.y
+        size_z = max_bound.z - min_bound.z
+
+        largest_dim = max(size_x, size_y, size_z)
+
+        assert largest_dim > 0, "Object has zero or negative dimensions, cannot scale."
+
+        scale_factor = size_of_max_dim / largest_dim
+
+        # Apply uniform scale
+        obj.scale *= scale_factor
+
+        # Apply the scale so it becomes part of the mesh data
+        bpy.context.view_layer.objects.active = obj
+        obj.select_set(True)
+        bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)

@@ -80,7 +80,11 @@ class RenderManager:
         scene.cycles.denoising_use_gpu = use_denoising_gpu
         scene.cycles.samples = samples
 
-        scene.cycles.use_persistent_data = True
+        try:
+            scene.render.use_persistent_data = True # Blender 5.0
+        except AttributeError:
+            scene.cycles.use_persistent_data = True # Before Blender 5.0
+
         scene.render.use_border = False
 
         if use_gpu_rendering:

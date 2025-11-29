@@ -5,7 +5,7 @@ import mathutils
 from mathutils import Vector, Matrix
 
 from camera_spawner import CameraSpawner
-from configure_camera_collections import PROCEDURAL_CAMERA_OBJ, LOOK_FROM_VOLUME_OBJ, LOOK_AT_VOLUME_OBJ
+from scene_preparation_scripts.configure_camera_collections import PROCEDURAL_CAMERA_OBJ, LOOK_FROM_VOLUME_OBJ, LOOK_AT_VOLUME_OBJ
 from data.image_text_instructions_task import ImageTextInstructSignatureVector
 from data.signature_vector.light_attribute import LightIntensity, BlackbodyLightColor, LightDirection
 

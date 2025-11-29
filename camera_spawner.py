@@ -1,12 +1,22 @@
 import bpy
 import mathutils
 import random
-from random_utils import get_random_point_in_mesh
+from utils.random_utils import get_random_point_in_mesh
 from rendering.log import Logger
+from utils.visibility_utils import check_visibility, is_point_inside_mesh
 
 
 class CameraSpawner:
-    def __init__(self, look_from_volume_name, look_at_volume_name, camera_name):
+    def __init__(self, look_from_volume_name, look_at_volume_name, camera_name, use_look_at_volume_exact_location=False):
+        """ Initialize CameraSpawner class
+
+        Args:
+            look_from_volume_name (str): Name of the volume object to look from.
+            look_at_volume_name (str): Name of the volume object to look at.
+            camera_name (str): Name of the camera object.
+            use_look_at_volume_exact_location (bool, optional): Whether to use the exact location of the look_at volume. Defaults to False.
+        """
+
         self.logger = Logger(prefix="CameraSpawner", verbose=True)
         self.logger.log(
             f"Initializing CameraSpawner with look_from='{look_from_volume_name}', "
@@ -18,30 +28,34 @@ class CameraSpawner:
         self.look_from_volume = bpy.data.objects.get(look_from_volume_name)
         assert self.look_from_volume is not None, f"Look from volume '{look_from_volume_name}' not found in the scene."
         self.camera_name = camera_name
+        self.use_look_at_volume_exact_location = use_look_at_volume_exact_location
 
-    def update(self, update_seed, pass_criteria=None, restore_hidden_state=False):
+    def update(self, update_seed, pass_criteria=None, restore_hidden_state=False, required_visible_target_name=None, max_attempts=30):
         self.logger.log(f"update() started with seed={update_seed}", is_verbose=True)
         look_at_was_hidden = self.look_at_volume.hide_get()
         look_from_was_hidden = self.look_from_volume.hide_get()
         try:
-            if look_at_was_hidden:
-                self.look_at_volume.hide_set(False)
-            if look_from_was_hidden:
-                self.look_from_volume.hide_set(False)
-
             assert update_seed is not None, "Seed must be provided."
             rng = random.Random(update_seed)
             has_good_sample = False
-            max_attempts = 300
             attempts = 0
             look_at = None
             look_from = None
             while not has_good_sample and attempts < max_attempts:
+                # Ensure volumes are visible for sampling
+                if look_at_was_hidden:
+                    self.look_at_volume.hide_set(False)
+                if look_from_was_hidden:
+                    self.look_from_volume.hide_set(False)
+
                 attempts += 1
-                look_at_seed = rng.getrandbits(64)
-                look_at = get_random_point_in_mesh(self.look_at_volume, seed=look_at_seed)
-                if look_at is None:
-                    continue
+                if self.use_look_at_volume_exact_location:
+                    look_at = self.look_at_volume.location
+                else:
+                    look_at_seed = rng.getrandbits(64)
+                    look_at = get_random_point_in_mesh(self.look_at_volume, seed=look_at_seed)
+                    if look_at is None:
+                        continue
                 look_from_seed = rng.getrandbits(64)
                 look_from = get_random_point_in_mesh(self.look_from_volume, seed=look_from_seed)
                 if look_from is None:
@@ -50,14 +64,19 @@ class CameraSpawner:
                         is_verbose=True,
                     )
                     continue
+                
+                has_good_sample = True
                 if pass_criteria is not None:
-                    has_good_sample = pass_criteria(look_from, look_at)
+                    has_good_sample = has_good_sample and pass_criteria(look_from, look_at)
+                
+                if has_good_sample and required_visible_target_name is not None:
+                    has_good_sample = self.validate_camera_can_see_target_object(look_from, required_visible_target_name)
+
+                if pass_criteria is not None or required_visible_target_name is not None:
                     self.logger.log(
-                        f"Attempt {attempts}: pass_criteria returned {has_good_sample}",
+                        f"Attempt {attempts}: validation returned {has_good_sample}",
                         is_verbose=True,
                     )
-                else:
-                    has_good_sample = True
 
             if not has_good_sample:
                 self.logger.log(f"Failed to find valid camera positions after {max_attempts} attempts.")
@@ -81,6 +100,46 @@ class CameraSpawner:
                     self.look_at_volume.hide_set(True)
                 if look_from_was_hidden:
                     self.look_from_volume.hide_set(True)
+
+    def validate_camera_can_see_target_object(self, look_from: mathutils.Vector, object_name: str) -> bool:
+        """
+        Validates that the camera position allows visibility of the specified object
+        and that the camera is not inside the object.
+
+        Args:
+            look_from (mathutils.Vector): The candidate camera position.
+            look_at (mathutils.Vector): The point the camera is looking at.
+            object_name (str): The name of the object to check visibility for.
+
+        Returns:
+            bool: True if the object is visible and camera is not inside it, False otherwise.
+        """
+        target_obj = bpy.data.objects.get(object_name)
+        if target_obj is None:
+            self.logger.log(f"Validation failed: Object '{object_name}' not found.", is_verbose=True)
+            return False
+
+        # Hide the look_at and look_from volumes to avoid interference with ray casting
+        # BUT: Do not hide the look_at_volume if it IS the target object
+        look_at_was_hidden = self.look_at_volume.hide_get()
+        look_from_was_hidden = self.look_from_volume.hide_get()
+        
+        should_hide_look_at = (self.look_at_volume != target_obj)
+
+        try:
+            if should_hide_look_at:
+                self.look_at_volume.hide_set(True)
+            
+            self.look_from_volume.hide_set(True)
+            
+            # Check visibility
+            return check_visibility(look_from, target_obj) and not is_point_inside_mesh(target_obj, look_from)
+        finally:
+            # Restore visibility state
+            if should_hide_look_at:
+                self.look_at_volume.hide_set(look_at_was_hidden)
+            
+            self.look_from_volume.hide_set(look_from_was_hidden)
 
     def compute_look_at_matrix(self, camera_position: mathutils.Vector, target_position: mathutils.Vector):
         self.logger.log(

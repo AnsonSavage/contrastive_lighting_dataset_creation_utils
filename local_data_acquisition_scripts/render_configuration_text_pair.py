@@ -1,7 +1,17 @@
 """Given a scene file, set up environment lighting and text description pairs for rendering.
 """
+import sys
+import pathlib
 import bpy
-from render_manager import HDRIManager, RenderManager
+
+# Ensure root directory is on sys.path
+current_dir = pathlib.Path(__file__).resolve().parent
+root_dir = current_dir.parent
+if str(root_dir) not in sys.path:
+    sys.path.append(str(root_dir))
+
+from rendering.hdri_manager import HDRIManager
+from rendering.render_manager import RenderManager
 
 class RenderConfigurationTextPair:
     def __init__(self, environment_light_path: str, text_description: str, strength: float = 1.0, rotation: float = 0.0):
