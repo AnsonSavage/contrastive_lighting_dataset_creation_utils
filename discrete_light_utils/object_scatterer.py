@@ -164,6 +164,20 @@ class ObjectScatterer:
             self.placed_objects.append(obj)
             self.placed_positions.append(obj.location.copy())
     
+    def unregister_placed_object(self, obj: bpy.types.Object) -> bool:
+        """Unregister an object from tracking (e.g., before re-scattering or removal).
+        
+        Returns:
+            True if the object was found and removed, False otherwise.
+        """
+        if obj in self.placed_objects:
+            idx = self.placed_objects.index(obj)
+            self.placed_objects.pop(idx)
+            if idx < len(self.placed_positions):
+                self.placed_positions.pop(idx)
+            return True
+        return False
+    
     def set_seed(self, new_seed: int):
         """Update the random seed."""
         self.seed = new_seed

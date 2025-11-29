@@ -298,17 +298,11 @@ if __name__ == "__main__":
             bpy.data.objects.remove(bg_object, do_unlink=True)
             continue
         
-        # Set origin again after placement (similar to focus object pattern)
-        object_loader.set_object_origin(bg_object, use_bbox_z='MAX', origin_offset=(0, 0, -0.2))
-        
         # Verify this object doesn't obstruct any light to the focus object
         if discrete_light_generator.check_object_obstructs_lighting(bg_object, focus_object):
             print(f"Background object {i+1} obstructs lighting to focus object, removing.", flush=True)
             # Remove from scatterer tracking
-            if bg_object in object_scatterer.placed_objects:
-                object_scatterer.placed_objects.remove(bg_object)
-            if object_scatterer.placed_positions:
-                object_scatterer.placed_positions.pop()  # Remove last added position
+            object_scatterer.unregister_placed_object(bg_object)
             bpy.data.objects.remove(bg_object, do_unlink=True)
             continue
         

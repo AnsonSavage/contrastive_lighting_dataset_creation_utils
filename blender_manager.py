@@ -1,4 +1,4 @@
-from environment import BLENDER_PATH, DATA_PATH
+from environment import BLENDER_PATH
 import threading
 import subprocess
 import os
