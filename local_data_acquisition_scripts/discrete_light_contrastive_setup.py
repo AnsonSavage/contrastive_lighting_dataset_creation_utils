@@ -22,7 +22,8 @@ from scene_preparation_scripts.configure_discrete_light_scene import (
     LOOK_FROM_VOLUME_NAME,
     FOCUS_OBJECT_NAME,
     FOCUS_OBJECTS_COLLECTION_NAME,
-    BACKGROUND_OBJECTS_COLLECTION_NAME
+    BACKGROUND_OBJECTS_COLLECTION_NAME,
+    EXCLUDED_OBJECTS_COLLECTION_NAME
 )
 
 import importlib
@@ -214,7 +215,7 @@ if __name__ == "__main__":
     print(f"Using lighting seed: {lighting_seed}", flush=True)
 
     # Generate a lighting configuration based on the seed
-    discrete_light_generator = DiscreteLightGenerator(seed=lighting_seed)
+    discrete_light_generator = DiscreteLightGenerator(seed=lighting_seed, excluded_collection_name=EXCLUDED_OBJECTS_COLLECTION_NAME)
     discrete_light_generator.generate_light_configuration()
 
     # Place a focus object
