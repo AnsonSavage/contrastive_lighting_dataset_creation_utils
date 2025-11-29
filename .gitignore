@@ -7,3 +7,4 @@ venv/
 contrastive_data/*
 *.out
 input_models_path.json
+objaverse_file_sizes.jsonl
