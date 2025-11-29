@@ -146,7 +146,7 @@ def main():
         object_scatterer.reset_positions()
 
         # Load Focus Object
-        object_selector = ObjectSelector(args.objects_folder, object_loader, max_file_size_mb=20, seed=object_selector_seed) # TODO: you can adjust max file size when you run this
+        object_selector = ObjectSelector(args.objects_folder, object_loader, seed=object_selector_seed) # TODO: you can adjust max file size when you run this
         focus_object = object_selector.load_object()
             
         focus_object.name = FOCUS_OBJECT_NAME
