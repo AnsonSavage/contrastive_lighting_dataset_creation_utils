@@ -191,13 +191,14 @@ class DiscreteLightGenerator:
             return None
 
         light_linking_collection_name = get_collection_name(light_obj.name)
-        lighting_linking_collection = bpy.data.collections.get(light_linking_collection_name)
-        if lighting_linking_collection:
-            for object_to_exclude in excluded_col.objects:
-                lighting_linking_collection.objects.link(object_to_exclude) 
+        light_linking_collection = bpy.data.collections.get(light_linking_collection_name)
+        if light_linking_collection:
+            # Link the entire excluded collection as a child of the light linking collection
+            light_linking_collection.children.link(excluded_col)
             
-            for object in lighting_linking_collection.collection_objects:
-                object.light_linking.link_state = 'EXCLUDE'
+            # Set the link state to EXCLUDE for the collection
+            for child in light_linking_collection.collection_children: # Should only be one child, the excluded collection
+                child.light_linking.link_state = 'EXCLUDE'
 
     def generate_light_configuration(self, seed=None):
         if seed is not None:
