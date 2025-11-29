@@ -63,11 +63,11 @@ def find_valid_camera_and_object_placement(
                 return distance >= 1.0 and distance <= max_camera_distance and not looking_straight_down
             
             camera_spawner.update(update_seed=camera_seed, pass_criteria=pass_criteria, required_visible_target_name=focus_object_name, restore_hidden_state=True) # Place the camera where it can see the focus object
-            discrete_light_generator.align_lighting_configuration_to_camera(camera)
-            discrete_light_generator.align_lighting_configuration_to_target_object(focus_object)
+            discrete_light_generator.align_lighting_configuration(camera, focus_object)
             if discrete_light_generator.verify_lighting_visible_to_target(focus_object):
                 camera_and_object_placement_good = True
                 break
+            discrete_light_generator.align_lighting_configuration(camera, focus_object, inverse=True) # Undo the transformation done to the lights
             print("Regenerating camera position to ensure lights are visible to focus object...", flush=True)
             camera_seed += 1  # Change seed to get a new camera position
             camera_placement_attempts += 1

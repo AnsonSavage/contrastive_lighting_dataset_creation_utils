@@ -91,13 +91,13 @@ class DiscreteLightGenerator:
     def hsv_to_rgb(h, s, v):
         return colorsys.hsv_to_rgb(h, s, v)
 
-    def align_lighting_configuration_to_target_object(self, target_object: bpy.types.Object):
+    def align_lighting_configuration_to_target_object(self, target_object: bpy.types.Object, inverse=False):
         assert len(self.light_objects) > 0, "No lights to align."
         target_loc = target_object.location
         for light_obj in self.light_objects:
-            light_obj.location += target_loc # Shift light position to be relative to target object
+            light_obj.location += target_loc * (-1 if inverse else 1) # Shift light position to be relative to target object
 
-    def align_lighting_configuration_to_camera(self, camera: bpy.types.Object):
+    def align_lighting_configuration_to_camera(self, camera: bpy.types.Object, inverse=False):
         assert len(self.light_objects) > 0, "No lights to align."
 
         matrix_to_align_camera_with_y_axis = self.get_matrix_to_align_with_camera_looking_down_y_axis(camera)
@@ -106,7 +106,15 @@ class DiscreteLightGenerator:
             current_matrix = Matrix.Translation(light_obj.location) @ light_obj.rotation_euler.to_matrix().to_4x4() # This is a more efficient alternative to view_layer.update() followed by light_obj.matrix_world
             
             # Rotate the light object around the world origin using the matrix
-            light_obj.matrix_world = rotation_matrix_4x4 @ current_matrix
+            light_obj.matrix_world = (rotation_matrix_4x4.inverted() if inverse else rotation_matrix_4x4) @ current_matrix
+    
+    def align_lighting_configuration(self, camera: bpy.types.Object, target_object: bpy.types.Object, inverse=False):
+        if not inverse:
+            self.align_lighting_configuration_to_camera(camera, inverse=inverse)
+            self.align_lighting_configuration_to_target_object(target_object, inverse=inverse)
+        else:
+            self.align_lighting_configuration_to_target_object(target_object, inverse=inverse) # first undo translation
+            self.align_lighting_configuration_to_camera(camera, inverse=inverse) # then undo rotation
     
     def _get_light_collection(self) -> bpy.types.Collection:
         # Create Collection
