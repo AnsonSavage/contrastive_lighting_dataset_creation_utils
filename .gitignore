@@ -8,3 +8,5 @@ contrastive_data/*
 *.out
 input_models_path.json
 output_renders/
+scene_metadata.json
+source_scenes/42ecdcd1-a78f-49e5-8985-3098948e82b1.blend

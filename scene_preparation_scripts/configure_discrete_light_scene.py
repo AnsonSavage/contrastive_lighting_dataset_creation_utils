@@ -1,11 +1,14 @@
 import bpy
 import bmesh
+import os
+import json
 
 # --- Constants for Names ---
 SCATTER_SURFACE_NAME = "scatter_surface"
 CAMERA_NAME = "procedural_camera"
 LOOK_FROM_VOLUME_NAME = "look_from_volume"
 FOCUS_OBJECT_NAME = "focus_object"
+SCALE_REFERENCE_NAME = "scale_reference"
 
 FOCUS_OBJECTS_COLLECTION_NAME = "Focus_Objects"
 BACKGROUND_OBJECTS_COLLECTION_NAME = "Background_Objects"
@@ -36,7 +39,7 @@ def setup_discrete_light_scene():
     # --- 2. Create Objects ---
 
     # Camera
-    if CAMERA_NAME not in bpy.data.objects:
+    if CAMERA_NAME not in bpy.data.objects: # This acts kind of like a dictionary in this situation I guess
         cam_data = bpy.data.cameras.new(name=CAMERA_DATA_NAME)
         cam_obj = bpy.data.objects.new(CAMERA_NAME, cam_data)
         scene.collection.objects.link(cam_obj)
@@ -81,7 +84,53 @@ def setup_discrete_light_scene():
     else:
         print(f"'{SCATTER_SURFACE_NAME}' already exists.")
 
+    # Scale Reference Empty
+    if SCALE_REFERENCE_NAME not in bpy.data.objects:
+        obj = bpy.data.objects.new(SCALE_REFERENCE_NAME, None)
+        scene.collection.objects.link(obj)
+        obj.empty_display_type = 'SPHERE'
+        obj.empty_display_size = 10.0
+        print(f"Added '{SCALE_REFERENCE_NAME}' to the scene.")
+    else:
+        print(f"'{SCALE_REFERENCE_NAME}' already exists.")
+
+    update_scene_metadata()
+
     print("\nDiscrete light scene setup finished successfully.")
+
+def update_scene_metadata():
+    """
+    Updates the scene_metadata.json file with a blank entry for the current scene if it doesn't exist.
+    """
+    filepath = bpy.data.filepath
+    if not filepath:
+        print("Blend file is not saved. Cannot update scene_metadata.json without a filename.")
+        return
+
+    scene_name = os.path.splitext(os.path.basename(filepath))[0]
+    
+    # Path to metadata json
+    local_project_path = r'C:\Users\yaboy\OneDrive\Documents\BYU\Masters_Thesis\contrastive_lighting_dataset_creation_utils'
+    metadata_path = os.path.join(local_project_path, "scene_metadata.json")
+    
+    data = {}
+    if os.path.exists(metadata_path):
+        try:
+            with open(metadata_path, 'r') as f:
+                data = json.load(f)
+        except Exception as e:
+            print(f"Error reading metadata file: {e}")
+
+    if scene_name not in data:
+        data[scene_name] = {}
+        try:
+            with open(metadata_path, 'w') as f:
+                json.dump(data, f, indent=4)
+            print(f"Created blank metadata entry for scene: {scene_name}")
+        except Exception as e:
+            print(f"Error writing metadata file: {e}")
+    else:
+        print(f"Metadata entry already exists for scene: {scene_name}")
 
 if __name__ == "__main__":
     setup_discrete_light_scene()

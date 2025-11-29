@@ -116,8 +116,19 @@ class DiscreteLightGenerator:
             bpy.context.scene.world = world
         
         world.use_nodes = True
-        bg_node = world.node_tree.nodes.get('Background')
         
+        # Get or create World Output node
+        output_node = world.node_tree.nodes.get('World Output')
+        if not output_node:
+            for node in world.node_tree.nodes:
+                if node.type == 'OUTPUT_WORLD':
+                    output_node = node
+                    break
+        if not output_node:
+            output_node = world.node_tree.nodes.new(type='ShaderNodeOutputWorld')
+
+        # Get or create Background node
+        bg_node = world.node_tree.nodes.get('Background')
         if not bg_node:
             # Try to find it by type if name is different
             for node in world.node_tree.nodes:
@@ -127,10 +138,14 @@ class DiscreteLightGenerator:
         
         if not bg_node:
             bg_node = world.node_tree.nodes.new(type='ShaderNodeBackground')
-            output_node = world.node_tree.nodes.get('World Output')
-            if not output_node:
-                output_node = world.node_tree.nodes.new(type='ShaderNodeOutputWorld')
-            world.node_tree.links.new(bg_node.outputs['Background'], output_node.inputs['Surface'])
+            
+        # Explicitly connect Background to World Output
+        world.node_tree.links.new(bg_node.outputs['Background'], output_node.inputs['Surface'])
+
+        # Ensure no texture is linked to the color input (overwrite existing environment map)
+        if bg_node.inputs['Color'].is_linked:
+            for link in bg_node.inputs['Color'].links:
+                world.node_tree.links.remove(link)
 
         # Randomize Color
         # Hue: Random

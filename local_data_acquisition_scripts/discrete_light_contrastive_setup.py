@@ -3,6 +3,8 @@ import random
 import sys
 import os
 import argparse
+from typing import Callable
+import mathutils
 
 # Add project root to path for imports
 local_path = r'C:\Users\yaboy\OneDrive\Documents\BYU\Masters_Thesis\contrastive_lighting_dataset_creation_utils'
@@ -67,8 +69,10 @@ def find_valid_camera_and_object_placement(
         while camera_placement_attempts < max_camera_placement_attempts:
             def pass_criteria(look_from, look_at):
                 # Ensure the camera is at least 1 unit away from the focus object
+                direction = (look_at - look_from).normalized()
                 distance = (look_from - look_at).length
-                return distance >= 1.0 and distance <= max_camera_distance
+                looking_straight_down = mathutils.Vector((0, 0, -1)).dot(direction) > 0.6
+                return distance >= 1.0 and distance <= max_camera_distance and not looking_straight_down
             
             camera_spawner.update(update_seed=camera_seed, pass_criteria=pass_criteria, required_visible_target_name=focus_object_name, restore_hidden_state=True) # Place the camera where it can see the focus object
             discrete_light_generator.align_lighting_configuration_to_camera(camera)
@@ -86,7 +90,6 @@ def find_valid_camera_and_object_placement(
             
     return camera_seed
 
-
 def sweep_lighting_seeds_and_render(
     discrete_light_generator: DiscreteLightGenerator,
     focus_object: bpy.types.Object,
@@ -94,8 +97,24 @@ def sweep_lighting_seeds_and_render(
     start_lighting_seed: int,
     total_lighting_seeds_attempt_to_render: int,
     output_dir: str,
-    output_path_generator
-) -> None:
+    output_path_generator: Callable[[int], str],
+    only_count=False
+) -> int:
+    """
+    Sweeps through a range of lighting seeds, rendering images for valid configurations.
+
+    Args:
+        discrete_light_generator (DiscreteLightGenerator): The discrete light generator instance.
+        focus_object (bpy.types.Object): The focus object in the scene.
+        camera (bpy.types.Object): The camera used for rendering.
+        start_lighting_seed (int): The starting lighting seed.
+        total_lighting_seeds_attempt_to_render (int): Total number of lighting seeds to attempt rendering.
+        output_dir (str): Directory to save rendered images.
+        output_path_generator (callable): A callback function that generates output file names based on lighting seed.
+
+    Returns:
+        int: The number of valid renders completed.
+    """
     render_manager = RenderManager()
     # Configure basic render settings
     render_manager.set_render_settings(
@@ -123,16 +142,18 @@ def sweep_lighting_seeds_and_render(
         if discrete_light_generator.verify_lighting_visible_to_target(focus_object):
             print(f"Lighting seed {current_lighting_seed} is valid. Rendering...", flush=True)
             
-            # Generate output path using the callback
-            filename = output_path_generator(current_lighting_seed)
-            output_path = os.path.join(output_dir, filename)
-            
-            render_manager.render(output_path=output_path)
+            if not only_count:
+                # Generate output path using the callback
+                filename = output_path_generator(current_lighting_seed)
+                output_path = os.path.join(output_dir, filename)
+                
+                render_manager.render(output_path=output_path)
             valid_renders_count += 1
         else:
             print(f"Lighting seed {current_lighting_seed} is invalid (obstructed). Skipping.", flush=True)
 
     print(f"Finished sweeping. Rendered {valid_renders_count} valid images.", flush=True)
+    return valid_renders_count
 
 
 if __name__ == "__main__":
@@ -153,10 +174,12 @@ if __name__ == "__main__":
     parser.add_argument('--max-camera-attempts', type=int, default=20, help='Maximum attempts to place camera with visible lights (default: 100)')
     parser.add_argument('--max-camera-distance', type=float, default=10.0, help='Maximum distance of the camera from the focus object (default: 10.0)')
     parser.add_argument('--sweep-lighting', action='store_true', help='Enable sweeping through a range of lighting seeds')
-    parser.add_argument('--num-lighting-samples', type=int, default=10, help='Number of lighting seeds to sweep if --sweep-lighting is enabled (default: 10)')
+    parser.add_argument('--num-lighting-samples', type=int, default=1000, help='Number of lighting seeds to sweep if --sweep-lighting is enabled (default: 1000)')
     parser.add_argument('--output-dir', type=str, default='output_renders', help='Directory to save renders (default: output_renders)')
     
     args = parser.parse_args(raw_argv)
+
+    import json
 
     # Ensure output_dir is absolute
     if not os.path.isabs(args.output_dir):
@@ -164,6 +187,24 @@ if __name__ == "__main__":
 
     folder_arg = args.folder
     num_background_objects = args.num_background_objects
+
+    # Check for scene metadata
+    scene_name = os.path.splitext(os.path.basename(bpy.data.filepath))[0]
+    metadata_path = os.path.join(local_path, "scene_metadata.json")
+    
+    if os.path.exists(metadata_path):
+        try:
+            with open(metadata_path, 'r') as f:
+                metadata = json.load(f)
+            
+            if scene_name in metadata:
+                scene_data = metadata[scene_name]
+                if "num_background_objects" in scene_data:
+                    print(f"Overriding num_background_objects from metadata for scene '{scene_name}': {scene_data['num_background_objects']}", flush=True)
+                    num_background_objects = scene_data["num_background_objects"]
+        except Exception as e:
+            print(f"Error reading scene metadata: {e}", flush=True)
+
     max_background_placement_attempts = args.max_background_placement_attempts
     lighting_seed = args.lighting_seed if args.lighting_seed is not None else random.randint(0, 10000)
     max_camera_placement_attempts = args.max_camera_attempts
@@ -296,7 +337,8 @@ if __name__ == "__main__":
             start_lighting_seed=lighting_seed,
             total_lighting_seeds_attempt_to_render=args.num_lighting_samples,
             output_dir=args.output_dir,
-            output_path_generator=output_path_generator
+            output_path_generator=output_path_generator,
+            only_count=True
         )
     else:
         print("Lighting sweep disabled. Setup complete.", flush=True)
