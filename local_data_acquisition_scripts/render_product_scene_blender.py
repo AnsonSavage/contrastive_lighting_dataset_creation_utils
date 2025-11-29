@@ -95,6 +95,29 @@ def main():
     
     args = parser.parse_args(raw_argv)
 
+    # Check for scene metadata to override settings
+    import json
+    scene_name = os.path.splitext(os.path.basename(bpy.data.filepath))[0]
+    project_root = os.getcwd()
+    metadata_path = os.path.join(project_root, "scene_metadata.json")
+    
+    num_background_objects = args.num_background_objects
+    
+    if os.path.exists(metadata_path):
+        try:
+            with open(metadata_path, 'r') as f:
+                metadata = json.load(f)
+            
+            if scene_name in metadata:
+                scene_data = metadata[scene_name]
+                if "num_background_objects" in scene_data:
+                    print(f"Overriding num_background_objects from metadata for scene '{scene_name}': {scene_data['num_background_objects']}", flush=True)
+                    num_background_objects = scene_data["num_background_objects"]
+        except Exception as e:
+            print(f"Error reading scene metadata: {e}", flush=True)
+    else:
+        print(f"No scene_metadata.json found at {metadata_path}", flush=True)
+
     # Setup RenderManager
     render_manager = RenderManager()
     render_manager.set_render_settings(
@@ -181,7 +204,7 @@ def main():
         placed_background_count = 0
         max_background_placement_attempts = 50
         
-        for i in range(args.num_background_objects):
+        for i in range(num_background_objects):
             # Load a new background object
             try:
                 bg_object = object_selector.load_object()
