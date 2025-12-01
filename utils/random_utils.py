@@ -62,17 +62,19 @@ def get_random_point_in_mesh(obj, max_attempts=3000, seed=None):
     print(f"Failed to find an interior point after {max_attempts} attempts.")
     return None
 
-def get_random_point_on_surface(obj, seed=None):
+def get_random_point_on_surface(obj, seed=None, num_points=1) -> Vector | list[Vector]:
     """
     Finds a random point on the surface of a given Blender mesh object.
 
     Args:
         obj (bpy.types.Object): The mesh object to sample from.
-
         seed (int, optional): If provided, uses a local RNG seeded with this value for deterministic sampling.
+        num_points (int): Number of random points to sample on the surface.
 
     Returns:
-        mathutils.Vector or None: A Vector representing the location of a random point on the surface, or None if unsuccessful.
+        mathutils.Vector or list[mathutils.Vector] or None: A Vector representing the location of a random point
+                                    on the mesh surface, a list of such Vectors if num_points > 1,
+                                    or None if sampling failed.
     
         Thanks to https://blender.stackexchange.com/a/221597/12805
     """
@@ -99,38 +101,41 @@ def get_random_point_on_surface(obj, seed=None):
         
     target_area = rng.uniform(0, total_area)
     
-    current_area = 0
-    chosen_face = None
-    
-    # Select a face based on area weight
-    for face in bm.faces:
-        current_area += face.calc_area()
-        if current_area >= target_area:
-            chosen_face = face
-            break
+    points_to_return = []
+    for i in range(num_points):
+        current_area = 0
+        chosen_face = None
+        
+        # Select a face based on area weight
+        for face in bm.faces:
+            current_area += face.calc_area()
+            if current_area >= target_area:
+                chosen_face = face
+                break
+                
+        if chosen_face is None:
+            chosen_face = bm.faces[-1]
             
-    if chosen_face is None:
-        chosen_face = bm.faces[-1]
+        # Sample a point on the chosen triangle
+        # Using barycentric coordinates
+        v1 = chosen_face.verts[0].co
+        v2 = chosen_face.verts[1].co
+        v3 = chosen_face.verts[2].co
         
-    # Sample a point on the chosen triangle
-    # Using barycentric coordinates
-    v1 = chosen_face.verts[0].co
-    v2 = chosen_face.verts[1].co
-    v3 = chosen_face.verts[2].co
-    
-    u = rng.random()
-    v = rng.random()
-    
-    if u + v > 1:
-        u = 1 - u
-        v = 1 - v
+        u = rng.random()
+        v = rng.random()
         
-    w = 1 - u - v
-    
-    point_local = u * v1 + v * v2 + w * v3
-    point_world = obj.matrix_world @ point_local
+        if u + v > 1:
+            u = 1 - u
+            v = 1 - v
+            
+        w = 1 - u - v
+        
+        point_local = u * v1 + v * v2 + w * v3
+        point_world = obj.matrix_world @ point_local
+        points_to_return.append(point_world)
     
     bm.free()
-    
-    return point_world
-    
+
+    return points_to_return if num_points > 1 else points_to_return[0] if points_to_return else None
+
