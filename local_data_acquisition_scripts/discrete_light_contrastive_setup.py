@@ -75,7 +75,7 @@ def find_valid_camera_and_object_placement(
                 looking_straight_down = mathutils.Vector((0, 0, -1)).dot(direction) > 0.6
                 return distance >= 1.0 and distance <= max_camera_distance and not looking_straight_down
             
-            camera_spawner.update(update_seed=camera_seed, pass_criteria=pass_criteria, required_visible_target_name=focus_object_name, restore_hidden_state=True) # Place the camera where it can see the focus object
+            camera_spawner.update(update_seed=camera_seed, pass_criteria=pass_criteria, required_visible_target_name=focus_object_name, restore_hidden_state=True, required_percentage_of_surface_visible=0.6) # Place the camera where it can see the focus object
             discrete_light_generator.align_lighting_configuration(camera, focus_object)
             if discrete_light_generator.verify_lighting_visible_to_target(focus_object):
                 camera_and_object_placement_good = True
