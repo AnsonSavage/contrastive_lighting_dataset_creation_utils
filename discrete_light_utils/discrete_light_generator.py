@@ -279,7 +279,7 @@ class DiscreteLightGenerator:
         visible_count = 0
         for light_obj in self.light_objects:
             pos = light_obj.location
-            if check_visibility(pos, target_obj, pre_update_view_layer=False):
+            if check_visibility(pos, target_obj, pre_update_view_layer=False, minimum_percentage_of_surface_visible=0.7, confidence_level=0.8):
                 print(f"Light {light_obj.name} is visible to the target object.")
                 visible_count += 1
             else:

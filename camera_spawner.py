@@ -30,7 +30,10 @@ class CameraSpawner:
         self.camera_name = camera_name
         self.use_look_at_volume_exact_location = use_look_at_volume_exact_location
 
-    def update(self, update_seed, pass_criteria=None, restore_hidden_state=False, required_visible_target_name=None, max_attempts=30):
+    def update(self, update_seed, pass_criteria=None, restore_hidden_state=False, required_visible_target_name=None, max_attempts=80, required_percentage_of_surface_visible=None):
+        if required_percentage_of_surface_visible is not None:
+            assert required_visible_target_name is not None, "If required_percentage_of_surface_visible is set, required_visible_target_name must also be set."
+
         self.logger.log(f"update() started with seed={update_seed}", is_verbose=True)
         look_at_was_hidden = self.look_at_volume.hide_get()
         look_from_was_hidden = self.look_from_volume.hide_get()
@@ -70,7 +73,8 @@ class CameraSpawner:
                     has_good_sample = has_good_sample and pass_criteria(look_from, look_at)
                 
                 if has_good_sample and required_visible_target_name is not None:
-                    has_good_sample = self.validate_camera_can_see_target_object(look_from, required_visible_target_name)
+                    assert required_percentage_of_surface_visible is not None, "required_percentage_of_surface_visible must be set when required_visible_target_name is provided."
+                    has_good_sample = self.validate_camera_can_see_target_object(look_from, required_visible_target_name, required_percentage_of_surface_visible=required_percentage_of_surface_visible)
 
                 if pass_criteria is not None or required_visible_target_name is not None:
                     self.logger.log(
@@ -101,7 +105,7 @@ class CameraSpawner:
                 if look_from_was_hidden:
                     self.look_from_volume.hide_set(True)
 
-    def validate_camera_can_see_target_object(self, look_from: mathutils.Vector, object_name: str) -> bool:
+    def validate_camera_can_see_target_object(self, look_from: mathutils.Vector, object_name: str, required_percentage_of_surface_visible: float) -> bool:
         """
         Validates that the camera position allows visibility of the specified object
         and that the camera is not inside the object.
@@ -133,7 +137,7 @@ class CameraSpawner:
             self.look_from_volume.hide_set(True)
             
             # Check visibility
-            return check_visibility(look_from, target_obj) and not is_point_inside_mesh(target_obj, look_from)
+            return check_visibility(look_from, target_obj, minimum_percentage_of_surface_visible=required_percentage_of_surface_visible) and not is_point_inside_mesh(target_obj, look_from)
         finally:
             # Restore visibility state
             if should_hide_look_at:

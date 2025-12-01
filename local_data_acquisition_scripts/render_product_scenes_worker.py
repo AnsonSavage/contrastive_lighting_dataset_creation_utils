@@ -12,7 +12,6 @@ from blender_manager import BlenderManager
 
 
 def compute_shard_work(scene_files: list[str], shard_index: int, shard_count: int, seeds_per_scene: int = 1024) -> list[tuple[str, int, int]]:
-    # TODO: investigate whether this avoids booting up scenes more often than is necessary
     # TODO: it has no sense of which items have already been completed.
     """
     Compute which (scene, start_seed, end_seed) tuples this shard should process.
