@@ -92,6 +92,8 @@ def main():
     parser.add_argument('--end-seed', type=int, default=1023)
     parser.add_argument('--objects-folder', required=True, help='Path to folder containing objects')
     parser.add_argument('--num-background-objects', type=int, default=2)
+    parser.add_argument('--min-object-height', type=float, default=0.5, help='Minimum height of the object bounding box (default: 0.5)')
+    parser.add_argument('--min-object-width', type=float, default=0.1, help='Minimum width/depth of the object bounding box (default: 0.1)')
     
     args = parser.parse_args(raw_argv)
 
@@ -169,7 +171,7 @@ def main():
         object_scatterer.reset_positions()
 
         # Load Focus Object
-        object_selector = ObjectSelector(args.objects_folder, object_loader, seed=object_selector_seed) # TODO: you can adjust max file size when you run this
+        object_selector = ObjectSelector(args.objects_folder, object_loader, min_height=args.min_object_height, min_width=args.min_object_width, seed=object_selector_seed) # TODO: you can adjust max file size when you run this
         focus_object = object_selector.load_object()
             
         focus_object.name = FOCUS_OBJECT_NAME

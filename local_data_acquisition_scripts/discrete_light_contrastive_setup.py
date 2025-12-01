@@ -170,6 +170,8 @@ if __name__ == "__main__":
     parser.add_argument('--max-background-placement-attempts', type=int, default=50, help='Maximum attempts per background object placement (default: 50)')
     parser.add_argument('--min-distance', type=float, default=1.5, help='Minimum distance between scattered objects (default: 1.5)')
     parser.add_argument('--max-object-dimension', type=float, default=2, help='The size of the maximum dimension of imported objects after scaling (default: 2)')
+    parser.add_argument('--min-object-height', type=float, default=0.5, help='Minimum height of the object bounding box (default: 0.5)')
+    parser.add_argument('--min-object-width', type=float, default=0.1, help='Minimum width/depth of the object bounding box (default: 0.1)')
     parser.add_argument('--lighting-seed', type=int, default=None, help='Random seed for discrete lighting generation (default: random)')
     parser.add_argument('--max-camera-attempts', type=int, default=20, help='Maximum attempts to place camera with visible lights (default: 100)')
     parser.add_argument('--max-camera-distance', type=float, default=10.0, help='Maximum distance of the camera from the focus object (default: 10.0)')
@@ -221,7 +223,7 @@ if __name__ == "__main__":
     clear_collection_objects(FOCUS_OBJECTS_COLLECTION_NAME) # TODO: this could probably move the unused objects into an unused collection, unless the likelihood of selecting the same object again is too low... 
     object_loader = ObjectLoader()
     object_selector_seed = random.randint(0, 10000)  # Separate seed for focus object selection
-    object_selector = ObjectSelector(folder_arg, object_loader, max_file_size_mb=20, seed=object_selector_seed)
+    object_selector = ObjectSelector(folder_arg, object_loader, min_height=args.min_object_height, min_width=args.min_object_width, max_file_size_mb=20, seed=object_selector_seed)
     focus_object = object_selector.load_object()
     focus_object.name = FOCUS_OBJECT_NAME
     focus_objects_collection = ensure_collection(FOCUS_OBJECTS_COLLECTION_NAME)

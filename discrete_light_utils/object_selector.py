@@ -5,8 +5,9 @@ from .object_loader import ObjectLoader
 from utils.bbox_utils import get_bbox_extrema
 
 class ObjectSelector:
-    def __init__(self, directory: str, object_loader: ObjectLoader, min_height: float = 0.5, max_file_size_mb: float = 50.0, seed: int | None = None):
+    def __init__(self, directory: str, object_loader: ObjectLoader, min_height: float = 0.5, min_width: float = 0.1, max_file_size_mb: float = 50.0, seed: int | None = None):
         self.min_height = min_height
+        self.min_width = min_width
         self.max_file_size_mb = max_file_size_mb
         self.directory = directory
         self.supported_extensions = ('.glb', '.gltf', '.fbx')
@@ -68,21 +69,44 @@ class ObjectSelector:
         """
         Validates the selected object
         """
-        return self.is_sufficiently_tall(obj) and not self.is_emissive(obj)  # Add more validation checks as needed
+        object_bbox = get_bbox_extrema(obj)
+        return self.is_sufficiently_tall(obj, object_bbox) and self.is_sufficiently_thick(obj, object_bbox) and not self.is_emissive(obj)  # Add more validation checks as needed
 
-    def is_sufficiently_tall(self, obj: bpy.types.Object) -> bool:
+    def is_sufficiently_tall(self, obj: bpy.types.Object, object_bbox=None) -> bool:
         """
         Checks if the object's bounding box height is above a certain threshold (after object has been scaled, of course)
         """
         if not obj:
             return False
         
-        min_bound, max_bound = get_bbox_extrema(obj)
+        if object_bbox is None:
+            min_bound, max_bound = get_bbox_extrema(obj)
+        else:
+            min_bound, max_bound = object_bbox
         height = max_bound.z - min_bound.z
         
         passed = height >= self.min_height
         if not passed:
             print(f"Object '{obj.name}' height {height:.2f} is below minimum required height {self.min_height}.", flush=True)
+        return passed
+
+    def is_sufficiently_thick(self, obj: bpy.types.Object, object_bbox=None) -> bool:
+        """
+        Checks if the object's bounding box width and depth are above a certain threshold.
+        """
+        if not obj:
+            return False
+        
+        if object_bbox is None:
+            min_bound, max_bound = get_bbox_extrema(obj)
+        else:
+            min_bound, max_bound = object_bbox
+        width = max_bound.x - min_bound.x
+        depth = max_bound.y - min_bound.y
+        
+        passed = width >= self.min_width and depth >= self.min_width
+        if not passed:
+            print(f"Object '{obj.name}' dimensions ({width:.2f}x{depth:.2f}) are below minimum required width/depth {self.min_width}.", flush=True)
         return passed
 
     def is_emissive(self, obj: bpy.types.Object) -> bool:
