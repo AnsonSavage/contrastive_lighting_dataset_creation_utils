@@ -39,4 +39,4 @@ export BLENDER_PATH="/home/ansonsav/blender/blender-4.5.4-linux-x64/blender"
 export DATA_PATH="/home/ansonsav/nobackup/autodelete/contrastive_lighting_dataset"
 
 # Run the worker script
-venv/bin/python3 local_data_acquisition_scripts/render_product_scenes_worker.py --shard-index "$NORM_INDEX" --shard-count "$SHARD_COUNT"
+venv/bin/python3 local_data_acquisition_scripts/render_product_scenes_worker.py --shard-index "$NORM_INDEX" --shard-count "$SHARD_COUNT" --output-dir-name "product_content_lock_test_02" --seeds-per-scene 1024

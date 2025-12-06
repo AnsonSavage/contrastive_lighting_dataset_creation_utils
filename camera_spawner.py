@@ -83,8 +83,9 @@ class CameraSpawner:
                     )
 
             if not has_good_sample:
-                self.logger.log(f"Failed to find valid camera positions after {max_attempts} attempts.")
-                return
+                error_msg = f"Failed to find valid camera positions after {max_attempts} attempts."
+                self.logger.log(error_msg)
+                raise RuntimeError(error_msg)
 
             camera = bpy.data.objects.get(self.camera_name)
             assert camera is not None, f"Camera '{self.camera_name}' not found in the scene."

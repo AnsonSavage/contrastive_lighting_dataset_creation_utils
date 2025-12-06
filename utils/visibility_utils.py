@@ -2,7 +2,7 @@ import bpy
 import math
 from abc import ABC, abstractmethod
 from mathutils import Vector
-from random_utils import get_random_point_on_surface
+from utils.random_utils import get_random_point_on_surface
 
 def is_point_inside_mesh(obj, point_world) -> bool:
     """

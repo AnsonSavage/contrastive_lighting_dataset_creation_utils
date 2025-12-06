@@ -65,6 +65,7 @@ def main():
     parser.add_argument('--shard-index', type=int, default=0, help='Index of the current shard (0-based).')
     parser.add_argument('--shard-count', type=int, default=1, help='Total number of shards.')
     parser.add_argument('--seeds-per-scene', type=int, default=1024, help='Number of lighting seeds per scene.')
+    parser.add_argument('--output-dir-name', type=str, default='product', help='Name of the output directory within DATA_PATH/renders.')
     args = parser.parse_args()
 
     # List all .blend files in PRODUCT_SCENES_DIR
@@ -82,15 +83,15 @@ def main():
         print(f"  - {Path(scene_path).stem}: seeds {start_seed}-{end_seed}")
 
     blender_manager = BlenderManager()
-    script_path = os.path.join("local_data_acquisition_scripts", "render_product_scene_blender.py")
+    script_path = os.path.join("local_data_acquisition_scripts", "render_product_scene_blender_maintain_content.py")
     objects_folder = os.path.join(DATA_PATH, "obj", "objaverse")
 
     for scene_path, start_seed, end_seed in my_work:
         print(f"Processing scene: {scene_path} (seeds {start_seed}-{end_seed})")
         
         scene_name = Path(scene_path).stem
-        output_dir = os.path.join(DATA_PATH, "renders", "product", scene_name)
-        
+        output_dir = os.path.join(DATA_PATH, "renders", args.output_dir_name, scene_name)
+
         # Ensure output directory exists
         os.makedirs(output_dir, exist_ok=True)
 
@@ -100,6 +101,7 @@ def main():
             python_script_path=script_path,
             args_for_python_script=[
                 f'--output-dir={output_dir}',
+                '--num-content-locks=3',
                 f'--start-seed={start_seed}',
                 f'--end-seed={end_seed}',
                 f'--objects-folder={objects_folder}'
