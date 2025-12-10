@@ -66,6 +66,10 @@ def main():
     parser.add_argument('--shard-count', type=int, default=1, help='Total number of shards.')
     parser.add_argument('--seeds-per-scene', type=int, default=1024, help='Number of lighting seeds per scene.')
     parser.add_argument('--output-dir-name', type=str, default='product', help='Name of the output directory within DATA_PATH/renders.')
+    parser.add_argument('--num-content-locks', type=int, default=15, help='Number of content configurations (different object placements) per scene.')
+    parser.add_argument('--render-aovs', action='store_true', help='If set, render AOVs (one set per content key, not per lighting key).')
+    parser.add_argument('--aovs', nargs='+', default=['metallic', 'albedo', 'roughness', 'normal'],
+                        help='List of AOVs to render (default: metallic albedo roughness normal)')
     args = parser.parse_args()
 
     # List all .blend files in PRODUCT_SCENES_DIR
@@ -96,16 +100,23 @@ def main():
         os.makedirs(output_dir, exist_ok=True)
 
         # Call Blender with the worker script
+        blender_args = [
+            f'--output-dir={output_dir}',
+            f'--num-content-locks={args.num_content_locks}',
+            f'--start-seed={start_seed}',
+            f'--end-seed={end_seed}',
+            f'--objects-folder={objects_folder}'
+        ]
+        
+        # Add AOV arguments if requested
+        if args.render_aovs:
+            blender_args.append('--render-aovs')
+            blender_args.extend(['--aovs'] + args.aovs)
+        
         blender_manager.open_blender_file_with_args(
             file_path=scene_path,
             python_script_path=script_path,
-            args_for_python_script=[
-                f'--output-dir={output_dir}',
-                '--num-content-locks=3',
-                f'--start-seed={start_seed}',
-                f'--end-seed={end_seed}',
-                f'--objects-folder={objects_folder}'
-            ],
+            args_for_python_script=blender_args,
             background=True
         )
 

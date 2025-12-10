@@ -25,6 +25,44 @@ def create_file_output_name(camera_seed: int, ligting_seed: int, scatter_seed: i
     blend_file_name = os.path.splitext(os.path.basename(bpy.data.filepath))[0]
     return f"{blend_file_name}_cam_{camera_seed}_light_{ligting_seed}_scatter_{scatter_seed}_objsel_{object_selector_seed}.png"
 
+
+def get_aov_output_directory(output_dir: str, camera_seed: int, scatter_seed: int, object_selector_seed: int) -> str:
+    """
+    Generate a unique AOV output directory based on the content key.
+    AOVs only need to be rendered once per content configuration (same camera, scatter, and object selection),
+    not for each lighting variation.
+    
+    :param output_dir: The base output directory for renders
+    :param camera_seed: The seed value used for camera placement
+    :param scatter_seed: The seed value used for object scattering
+    :param object_selector_seed: The seed value used for object selection
+    :return: A string representing the path to the AOV output directory
+    """
+    blend_file_name = os.path.splitext(os.path.basename(bpy.data.filepath))[0]
+    aov_dir = os.path.join(output_dir, "aovs")
+    aov_dir_name = f"{blend_file_name}_cam_{camera_seed}_scatter_{scatter_seed}_objsel_{object_selector_seed}_aovs"
+    aov_output_dir = os.path.join(aov_dir, aov_dir_name)
+    os.makedirs(aov_output_dir, exist_ok=True)
+    return aov_output_dir
+
+
+def aov_already_rendered(aov_output_dir: str, aov_names: list[str]) -> bool:
+    """
+    Check if AOVs have already been rendered for this content key.
+    
+    :param aov_output_dir: The directory where AOVs should be saved
+    :param aov_names: List of AOV names that should exist
+    :return: True if all AOVs exist, False otherwise
+    """
+    if not os.path.exists(aov_output_dir):
+        return False
+    for aov_name in aov_names:
+        # Check for typical AOV file patterns (e.g., metallic.png, albedo.png, etc.)
+        aov_file = os.path.join(aov_output_dir, f"{aov_name}.png")
+        if not os.path.exists(aov_file):
+            return False
+    return True
+
 def render_exists(output_dir, lighting_seed, scatter_seed, object_selector_seed):
     blend_file_name = os.path.splitext(os.path.basename(bpy.data.filepath))[0]
     expected_pattern = (
@@ -180,6 +218,9 @@ def main():
     parser.add_argument('--min-object-height', type=float, default=0.5, help='Minimum height of the object bounding box (default: 0.5)')
     parser.add_argument('--min-object-width', type=float, default=0.1, help='Minimum width/depth of the object bounding box (default: 0.1)')
     parser.add_argument('--min-passing-lighting-percentage', type=float, default=0.85, help='Minimum percentage of lighting seeds that must pass validation (0.0-1.0, default: 0.85). Set to 1.0 for all seeds to pass.')
+    parser.add_argument('--render-aovs', action='store_true', help='If set, render AOVs (one set per content key, not per lighting key)')
+    parser.add_argument('--aovs', nargs='+', default=['metallic', 'albedo', 'roughness', 'normal'],
+                        help='List of AOVs to render (default: metallic albedo roughness normal)')
     
     args = parser.parse_args(raw_argv)
 
@@ -326,6 +367,18 @@ def main():
         if not is_content_such_that_lighting_works:
             print(f"Could not find valid content for this lock after {max_content_generation_attempts} attempts, moving to next lock.", flush=True)
             continue # Could not find valid content for this lock, move to next
+
+        # Configure and render AOVs once per content key (before the lighting loop)
+        # AOVs are lighting-independent, so we only need one set per content configuration
+        if args.render_aovs:
+            aov_output_dir = get_aov_output_directory(
+                args.output_dir, final_camera_seed, scatter_seed, object_selector_seed
+            )
+            if not aov_already_rendered(aov_output_dir, args.aovs):
+                print(f"Rendering AOVs to {aov_output_dir}...", flush=True)
+                render_manager.set_aovs(args.aovs, aov_output_dir)
+            else:
+                print(f"AOVs already rendered for content key, skipping: {aov_output_dir}", flush=True)
 
         # At this point, we know that the current content works for the required percentage of lighting seeds. So now we'll render for each seed
         for lighting_seed in range(args.start_seed, args.end_seed + 1):
