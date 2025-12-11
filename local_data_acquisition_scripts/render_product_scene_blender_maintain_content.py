@@ -4,6 +4,8 @@ import argparse
 import glob
 import bpy
 import mathutils
+import random
+from typing import Optional
 
 # Add project root to path
 sys.path.append(os.getcwd())
@@ -12,6 +14,7 @@ from camera_spawner import CameraSpawner
 from discrete_light_utils import DiscreteLightGenerator, ObjectLoader, ObjectScatterer, ObjectSelector
 from discrete_light_utils.collection_utils import ensure_collection, clear_collection_objects
 from rendering.render_manager import RenderManager
+from material_manager import MaterialManager, MaterialSelector
 from scene_preparation_scripts.configure_discrete_light_scene import (
     SCATTER_SURFACE_NAME,
     CAMERA_NAME,
@@ -21,12 +24,13 @@ from scene_preparation_scripts.configure_discrete_light_scene import (
     BACKGROUND_OBJECTS_COLLECTION_NAME
 )
 
-def create_file_output_name(camera_seed: int, ligting_seed: int, scatter_seed: int, object_selector_seed: int) -> str:
+def create_file_output_name(camera_seed: int, ligting_seed: int, scatter_seed: int, object_selector_seed: int, material_seed: Optional[int] = None, extension='.png') -> str:
     blend_file_name = os.path.splitext(os.path.basename(bpy.data.filepath))[0]
-    return f"{blend_file_name}_cam_{camera_seed}_light_{ligting_seed}_scatter_{scatter_seed}_objsel_{object_selector_seed}.png"
+    if material_seed is not None:
+        return f"{blend_file_name}_cam_{camera_seed}_light_{ligting_seed}_scatter_{scatter_seed}_objsel_{object_selector_seed}_mat_{material_seed}{extension}"
+    return f"{blend_file_name}_cam_{camera_seed}_light_{ligting_seed}_scatter_{scatter_seed}_objsel_{object_selector_seed}{extension}"
 
-
-def get_aov_output_directory(output_dir: str, camera_seed: int, scatter_seed: int, object_selector_seed: int) -> str:
+def get_aov_output_directory(output_dir: str, camera_seed: int, scatter_seed: int, object_selector_seed: int, material_seed: Optional[int] = None) -> str:
     """
     Generate a unique AOV output directory based on the content key.
     AOVs only need to be rendered once per content configuration (same camera, scatter, and object selection),
@@ -36,17 +40,21 @@ def get_aov_output_directory(output_dir: str, camera_seed: int, scatter_seed: in
     :param camera_seed: The seed value used for camera placement
     :param scatter_seed: The seed value used for object scattering
     :param object_selector_seed: The seed value used for object selection
+    :param material_seed: The optional seed value used for material selection
     :return: A string representing the path to the AOV output directory
     """
     blend_file_name = os.path.splitext(os.path.basename(bpy.data.filepath))[0]
     aov_dir = os.path.join(output_dir, "aovs")
-    aov_dir_name = f"{blend_file_name}_cam_{camera_seed}_scatter_{scatter_seed}_objsel_{object_selector_seed}_aovs"
+    if material_seed is not None:
+        aov_dir_name = f"{blend_file_name}_cam_{camera_seed}_scatter_{scatter_seed}_objsel_{object_selector_seed}_mat_{material_seed}_aovs"
+    else:
+        aov_dir_name = f"{blend_file_name}_cam_{camera_seed}_scatter_{scatter_seed}_objsel_{object_selector_seed}_aovs"
     aov_output_dir = os.path.join(aov_dir, aov_dir_name)
     os.makedirs(aov_output_dir, exist_ok=True)
     return aov_output_dir
 
 
-def aov_already_rendered(aov_output_dir: str, aov_names: list[str]) -> bool:
+def aov_already_rendered(aov_output_dir: str, aov_names: list[str], extension: str = ".png") -> bool:
     """
     Check if AOVs have already been rendered for this content key.
     
@@ -58,17 +66,23 @@ def aov_already_rendered(aov_output_dir: str, aov_names: list[str]) -> bool:
         return False
     for aov_name in aov_names:
         # Check for typical AOV file patterns (e.g., metallic.png, albedo.png, etc.)
-        aov_file = os.path.join(aov_output_dir, f"{aov_name}.png")
+        aov_file = os.path.join(aov_output_dir, f"{aov_name}{extension}")
         if not os.path.exists(aov_file):
             return False
     return True
 
-def render_exists(output_dir, lighting_seed, scatter_seed, object_selector_seed):
+def render_exists(output_dir, lighting_seed, scatter_seed, object_selector_seed, material_seed: Optional[int] = None, extension: str = ".png") -> bool:
     blend_file_name = os.path.splitext(os.path.basename(bpy.data.filepath))[0]
-    expected_pattern = (
-        f"{blend_file_name}_cam_*_light_{lighting_seed}_scatter_"
-        f"{scatter_seed}_objsel_{object_selector_seed}.png"
-    )
+    if material_seed is not None:
+        expected_pattern = (
+            f"{blend_file_name}_cam_*_light_{lighting_seed}_scatter_"
+            f"{scatter_seed}_objsel_{object_selector_seed}_mat_{material_seed}{extension}"
+        )
+    else:
+        expected_pattern = (
+            f"{blend_file_name}_cam_*_light_{lighting_seed}_scatter_"
+            f"{scatter_seed}_objsel_{object_selector_seed}{extension}"
+        )
     existing = glob.glob(os.path.join(output_dir, expected_pattern))
     if existing:
         print(
@@ -200,6 +214,47 @@ def place_background_objects(
     
     return placed_background_objects
 
+class MaterialAssigner():
+    def __init__(self, path_to_material_library_blend: str, seed: int, collections_to_clear: Optional[list[str]] = None):
+        self.refresh_scene()
+        for coll_name in collections_to_clear or []:
+            clear_collection_objects(coll_name)
+        self.material_selector = MaterialSelector(path_to_material_library_blend, seed)
+        self.material_manager = MaterialManager()
+        self.objects_to_shuffle_materials_for = self.update_objects_to_shuffle_materials_for()
+        self.rng = self.set_seed(seed)
+    
+    def reassign_materials(self, reshuffle_probability: float = 1.0, redo_uvs_probability = 0.1):
+        assert 0.0 <= reshuffle_probability <= 1.0, "reshuffle_probability must be between 0.0 and 1.0"
+        assert 0.0 <= redo_uvs_probability <= 1.0, "redo_uvs_probability must be between 0.0 and 1.0"
+        if redo_uvs_probability > 0.0 and self.rng.random() < redo_uvs_probability:
+            self.material_manager.redo_uvs(self.objects_to_shuffle_materials_for, method='SMART', seed=self.seed)
+        for obj in self.objects_to_shuffle_materials_for:
+            if bpy.context.scene.objects.get(obj.name) is None:
+                print(f"Warning: Object '{obj.name}' not found in the current scene, skipping material assignment.", flush=True)
+                continue
+            # assert bpy.context.scene.objects.get(obj.name) is not None, f"Object '{obj.name}' not found in the current scene."
+            if reshuffle_probability == 1.0 or self.rng.random() < reshuffle_probability:
+                material = self.material_selector.select_material()
+                self.material_manager.assign_material(obj, material)
+
+    def set_seed(self, seed: int):
+        self.seed = seed
+        self.rng = random.Random(seed)
+        self.material_selector.set_seed(seed)
+        return self.rng
+
+    def refresh_scene(self):
+        # refresh everything
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        depsgraph.update()
+        bpy.context.view_layer.update()
+        for obj in bpy.context.scene.objects:
+            obj.hide_render = obj.hide_render
+        
+    def update_objects_to_shuffle_materials_for(self):
+        self.objects_to_shuffle_materials_for = [obj for obj in bpy.data.objects if obj.type == 'MESH']
+        return self.objects_to_shuffle_materials_for
 def main():
     # Parse args
     raw_argv = sys.argv
@@ -214,6 +269,7 @@ def main():
     parser.add_argument('--start-seed', type=int, default=0)
     parser.add_argument('--end-seed', type=int, default=1023)
     parser.add_argument('--objects-folder', required=True, help='Path to folder containing objects')
+    parser.add_argument('--material-library', required=False, help='Path to the material library .blend file')
     parser.add_argument('--num-background-objects', type=int, default=2)
     parser.add_argument('--min-object-height', type=float, default=0.5, help='Minimum height of the object bounding box (default: 0.5)')
     parser.add_argument('--min-object-width', type=float, default=0.1, help='Minimum width/depth of the object bounding box (default: 0.1)')
@@ -225,7 +281,6 @@ def main():
     args = parser.parse_args(raw_argv)
 
     # Check for scene metadata to override settings
-    import json
     scene_name = os.path.splitext(os.path.basename(bpy.data.filepath))[0]
     project_root = os.getcwd()
     metadata_path = os.path.join(project_root, "scene_metadata.json")
@@ -266,8 +321,11 @@ def main():
     camera_seed = 21
     scatter_seed = 42
     object_selector_seed = 63
+    material_seed = 84 if args.material_library else None
     camera = bpy.data.objects.get(CAMERA_NAME)
     assert camera is not None, f"Camera '{CAMERA_NAME}' not found in the scene."
+
+    material_assigner = MaterialAssigner(args.material_library, material_seed, collections_to_clear=[FOCUS_OBJECTS_COLLECTION_NAME, BACKGROUND_OBJECTS_COLLECTION_NAME]) if args.material_library else None
 
     for _ in range(num_content_locks):
         is_content_such_that_lighting_works = False
@@ -287,6 +345,8 @@ def main():
             clear_collection_objects(FOCUS_OBJECTS_COLLECTION_NAME)
             clear_collection_objects(BACKGROUND_OBJECTS_COLLECTION_NAME)
             object_scatterer.reset_positions()
+            if material_assigner:
+                material_assigner.update_objects_to_shuffle_materials_for()
 
             # Load Focus Object
             object_selector = ObjectSelector(args.objects_folder, object_loader, min_height=args.min_object_height, min_width=args.min_object_width, seed=object_selector_seed) # TODO: you can adjust max file size when you run this
@@ -370,22 +430,37 @@ def main():
 
         # Configure and render AOVs once per content key (before the lighting loop)
         # AOVs are lighting-independent, so we only need one set per content configuration
-        if args.render_aovs:
-            aov_output_dir = get_aov_output_directory(
-                args.output_dir, final_camera_seed, scatter_seed, object_selector_seed
-            )
-            if not aov_already_rendered(aov_output_dir, args.aovs):
-                print(f"Rendering AOVs to {aov_output_dir}...", flush=True)
-                render_manager.set_aovs(args.aovs, aov_output_dir)
-            else:
-                print(f"AOVs already rendered for content key, skipping: {aov_output_dir}", flush=True)
+        if not args.material_library:
+            if args.render_aovs:
+                aov_output_dir = get_aov_output_directory(args.output_dir, final_camera_seed, scatter_seed, object_selector_seed)
+                if not aov_already_rendered(aov_output_dir, args.aovs):
+                    print(f"Rendering AOVs to {aov_output_dir}...", flush=True)
+                    render_manager.set_aovs(args.aovs, aov_output_dir)
+                else:
+                    print(f"AOVs already rendered for content key, skipping: {aov_output_dir}", flush=True)
+                    render_manager.clear_aovs()
 
         # At this point, we know that the current content works for the required percentage of lighting seeds. So now we'll render for each seed
         for lighting_seed in range(args.start_seed, args.end_seed + 1):
-            if render_exists(args.output_dir, lighting_seed, scatter_seed, object_selector_seed):
+            if render_exists(args.output_dir, lighting_seed, scatter_seed, object_selector_seed, material_seed):
+                if material_seed:
+                    material_seed += 1 # Simulate advancing the material seed because it was already rendered
                 continue
+                
+            if material_assigner:
+                assert material_seed is not None
+                material_assigner.set_seed(material_seed)
+                material_assigner.reassign_materials(reshuffle_probability=1.0)
+                if args.render_aovs:
+                    aov_output_dir = get_aov_output_directory(args.output_dir, final_camera_seed, scatter_seed, object_selector_seed, material_seed=material_seed)
+                    if not aov_already_rendered(aov_output_dir, args.aovs):
+                        print(f"Rendering AOVs to {aov_output_dir}...", flush=True)
+                        render_manager.set_aovs(args.aovs, aov_output_dir)
+                    else:
+                        print(f"AOVs already rendered for content key, skipping: {aov_output_dir}", flush=True)
+                        render_manager.clear_aovs()
 
-            print(f"Processing seed {lighting_seed}...", flush=True)
+                print(f"Processing seed {lighting_seed}...", flush=True)
             
             # 1. Lighting Config
             discrete_light_generator = DiscreteLightGenerator(seed=lighting_seed)
@@ -397,7 +472,8 @@ def main():
                 camera_seed=final_camera_seed,
                 ligting_seed=lighting_seed,
                 scatter_seed=scatter_seed,
-                object_selector_seed=object_selector_seed
+                object_selector_seed=object_selector_seed,
+                material_seed=material_seed if args.material_library else None
             )
             output_path = os.path.join(args.output_dir, output_filename)
             
@@ -408,6 +484,9 @@ def main():
 
             render_manager.set_camera(camera)
             render_manager.render(output_path=output_path)
+
+            if material_assigner and material_seed is not None:
+                material_seed += 1
 
 if __name__ == "__main__":
     main()

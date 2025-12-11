@@ -21,9 +21,9 @@ from scene_preparation_scripts.configure_discrete_light_scene import (
     BACKGROUND_OBJECTS_COLLECTION_NAME
 )
 
-def create_file_output_name(camera_seed: int, ligting_seed: int, scatter_seed: int, object_selector_seed: int) -> str:
+def create_file_output_name(camera_seed: int, ligting_seed: int, scatter_seed: int, object_selector_seed: int, extension: str = ".png") -> str:
     blend_file_name = os.path.splitext(os.path.basename(bpy.data.filepath))[0]
-    return f"{blend_file_name}_cam_{camera_seed}_light_{ligting_seed}_scatter_{scatter_seed}_objsel_{object_selector_seed}.png"
+    return f"{blend_file_name}_cam_{camera_seed}_light_{ligting_seed}_scatter_{scatter_seed}_objsel_{object_selector_seed}{extension}"
 
 def find_valid_camera_and_object_placement(
     object_loader: ObjectLoader,
@@ -152,7 +152,8 @@ def main():
         # Actually, since final_camera_seed can change, we use a pattern match instead
         blend_file_name = os.path.splitext(os.path.basename(bpy.data.filepath))[0]
         # Check for any file matching this lighting seed pattern
-        expected_pattern = f"{blend_file_name}_cam_*_light_{lighting_seed}_scatter_{scatter_seed}_objsel_{object_selector_seed}.png"
+        EXTENSION = ".png"
+        expected_pattern = f"{blend_file_name}_cam_*_light_{lighting_seed}_scatter_{scatter_seed}_objsel_{object_selector_seed}{EXTENSION}"
         existing_files = glob.glob(os.path.join(args.output_dir, expected_pattern))
         if existing_files:
             print(f"Skipping seed {lighting_seed}: render already exists at {existing_files[0]}", flush=True)

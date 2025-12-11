@@ -1,7 +1,7 @@
 import os
 import tempfile
 import bpy
-from aov_manager import configure_aovs
+from aov_manager import configure_aovs, clear_aov_output_nodes
 
 from .log import Logger
 
@@ -66,14 +66,15 @@ class RenderManager:
         samples: int = 128,
         use_gpu_rendering: bool = True,
         bypass_compositing_nodes: bool = False,
-        set_color_management_defaults: bool = True
+        set_color_management_defaults: bool = True,
+        file_format = 'PNG'
     ) -> None:
         """Configure render settings for Cycles."""
         scene = bpy.context.scene
         scene.render.filepath = output_path
         scene.render.resolution_x = resolution[0]
         scene.render.resolution_y = resolution[1]
-        scene.render.image_settings.file_format = 'PNG'
+        scene.render.image_settings.file_format = file_format
         scene.render.image_settings.color_mode = 'RGB'
         scene.render.resolution_percentage = 100
         scene.cycles.use_denoising = use_denoising
@@ -110,6 +111,14 @@ class RenderManager:
         :param output_directory: Directory where AOV outputs will be saved
         """
         configure_aovs(aov_names, output_directory)
+
+    def clear_aovs(self) -> None:
+        """
+        Clear any configured AOV output nodes.
+        """
+        if bpy.context.scene.use_nodes:
+            clear_aov_output_nodes(bpy.context.scene.node_tree)
+            logger.log("Cleared AOV output nodes.")
 
 
     def render(self, output_path=None) -> str:

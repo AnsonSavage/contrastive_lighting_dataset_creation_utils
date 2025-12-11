@@ -70,6 +70,8 @@ def main():
     parser.add_argument('--render-aovs', action='store_true', help='If set, render AOVs (one set per content key, not per lighting key).')
     parser.add_argument('--aovs', nargs='+', default=['metallic', 'albedo', 'roughness', 'normal'],
                         help='List of AOVs to render (default: metallic albedo roughness normal)')
+    parser.add_argument('--material-library', type=str, default=None, help='Path to the material library .blend file')
+    parser.add_argument('--min-passing-lighting-percentage', type=float, default=0.85, help='Minimum percentage of lighting seeds that must pass validation (0.0-1.0, default: 0.85). Set to 1.0 for all seeds to pass.')
     args = parser.parse_args()
 
     # List all .blend files in PRODUCT_SCENES_DIR
@@ -105,8 +107,13 @@ def main():
             f'--num-content-locks={args.num_content_locks}',
             f'--start-seed={start_seed}',
             f'--end-seed={end_seed}',
+            f'--min-passing-lighting-percentage={args.min_passing_lighting_percentage}',
             f'--objects-folder={objects_folder}'
         ]
+        
+        # Add material library argument if provided
+        if args.material_library:
+            blender_args.append(f'--material-library={args.material_library}')
         
         # Add AOV arguments if requested
         if args.render_aovs:

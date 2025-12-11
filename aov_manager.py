@@ -208,10 +208,11 @@ class AOVNodeManager:
         return file_output_node
 
 class AOVManager(ABC):
-    def __init__(self, input_name: str, output_directory: str):
+    def __init__(self, input_name: str, output_directory: str, extension: str = ".png"):
         self.input_name = input_name
         self.pass_name = input_name  # pass name assumed same as input name
         self.output_directory = output_directory
+        self.extension = extension
         self.node_manager = AOVNodeManager(self.input_name, {}, self.log)
 
     def log(self, msg: str):
@@ -232,14 +233,14 @@ class AOVManager(ABC):
         self.log(f"Shader AOV '{self.pass_name}' ready.")
     
     def _get_output_path(self) -> str:
-        return os.path.join(self.output_directory, f"{self._get_output_name().lower()}.png")
+        return os.path.join(self.output_directory, f"{self._get_output_base_name().lower()}{self.extension}")
     
     @abstractmethod
     def _configure_for_aov(self):
         pass
 
     @abstractmethod
-    def _get_output_name(self) -> str:
+    def _get_output_base_name(self) -> str:
         pass
 
 
@@ -253,7 +254,7 @@ class AlbedoAOVManager(AOVManager):
         view_layer.use_pass_diffuse_color = True
         self.log("Enabled Diffuse Color pass on view layer.")
     
-    def _get_output_name(self):
+    def _get_output_base_name(self):
         return "albedo"
 
 
@@ -275,8 +276,7 @@ class NormalAOVManager(AOVManager):
         view_layer.use_pass_normal = True
         self.log("Enabled Normal pass on view layer.")
 
-    def _get_output_name(self):
-        # File will be written as "normal.png" in the configured output directory
+    def _get_output_base_name(self):
         return "normal"
 
 class NonDefaultAOVManager(AOVManager):
@@ -340,7 +340,7 @@ class NonDefaultAOVManager(AOVManager):
                 self.log(f"Skipped {mat.name}: {e}")
         self.log(f"Updated {count} materials.")
     
-    def _get_output_name(self):
+    def _get_output_base_name(self):
         return self.input_name
         
 def get_aov_manager_factory(input_name: str, output_directory: str) -> AOVManager:
