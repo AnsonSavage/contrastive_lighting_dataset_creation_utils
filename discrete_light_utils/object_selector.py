@@ -20,10 +20,10 @@ class ObjectSelector:
     def _get_all_files(self):
         if not os.path.isdir(self.directory):
             raise ValueError(f"Directory {self.directory} does not exist.")
-        return [f for f in os.listdir(self.directory) if f.lower().endswith(self.supported_extensions) and os.path.getsize(os.path.join(self.directory, f)) <= self.max_file_size_mb * 1024 * 1024]
+        return sorted([f for f in os.listdir(self.directory) if f.lower().endswith(self.supported_extensions) and os.path.getsize(os.path.join(self.directory, f)) <= self.max_file_size_mb * 1024 * 1024])
 
     def get_valid_files(self):
-        return list(set(self.all_files) - self.invalid_files)
+        return sorted(list(set(self.all_files) - self.invalid_files)) # Interestingly, sorting is required for determinism
 
     def load_object(self, max_attempts: int = 50) -> bpy.types.Object:
         """
