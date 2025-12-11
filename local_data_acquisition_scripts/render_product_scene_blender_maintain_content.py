@@ -321,11 +321,11 @@ def main():
     camera_seed = 21
     scatter_seed = 42
     object_selector_seed = 63
-    material_seed = 84 if args.material_library else None
+    material_seed_base = 84 if args.material_library else None
     camera = bpy.data.objects.get(CAMERA_NAME)
     assert camera is not None, f"Camera '{CAMERA_NAME}' not found in the scene."
 
-    material_assigner = MaterialAssigner(args.material_library, material_seed, collections_to_clear=[FOCUS_OBJECTS_COLLECTION_NAME, BACKGROUND_OBJECTS_COLLECTION_NAME]) if args.material_library else None
+    material_assigner = MaterialAssigner(args.material_library, material_seed_base, collections_to_clear=[FOCUS_OBJECTS_COLLECTION_NAME, BACKGROUND_OBJECTS_COLLECTION_NAME]) if args.material_library else None
 
     for _ in range(num_content_locks):
         is_content_such_that_lighting_works = False
@@ -442,9 +442,10 @@ def main():
 
         # At this point, we know that the current content works for the required percentage of lighting seeds. So now we'll render for each seed
         for lighting_seed in range(args.start_seed, args.end_seed + 1):
+            # Derive material seed from lighting seed for consistency across shards
+            material_seed = material_seed_base + lighting_seed if material_seed_base is not None else None
+            
             if render_exists(args.output_dir, lighting_seed, scatter_seed, object_selector_seed, material_seed):
-                if material_seed:
-                    material_seed += 1 # Simulate advancing the material seed because it was already rendered
                 continue
                 
             if material_assigner:
@@ -484,9 +485,6 @@ def main():
 
             render_manager.set_camera(camera)
             render_manager.render(output_path=output_path)
-
-            if material_assigner and material_seed is not None:
-                material_seed += 1
 
 if __name__ == "__main__":
     main()
